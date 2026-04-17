@@ -16,6 +16,17 @@ This document covers foundational and intermediate concepts in C#, ASP.NET Core,
 6. [SQL for .NET Developers](#sql-for-net-developers)
 7. [Front‑End Integration (Angular/React Basics)](#front-end-integration-angularreact-basics)
 8. [Debugging and Troubleshooting](#debugging-and-troubleshooting)
+9. [LINQ Fundamentals](#linq-fundamentals)
+10. [Authentication and Authorisation in ASP.NET Core](#authentication-and-authorisation-in-aspnet-core)
+11. [Working with Files and Streams](#working-with-files-and-streams)
+12. [Caching Strategies](#caching-strategies)
+13. [Middleware in Depth](#middleware-in-depth)
+14. [Configuration Management](#configuration-management)
+15. [Unit Testing Basics](#unit-testing-basics)
+16. [Version Control with Git (Essentials)](#version-control-with-git-essentials)
+17. [Error Handling and Logging Best Practices](#error-handling-and-logging-best-practices)
+18. [Background Tasks with `IHostedService`](#background-tasks-with-ihostedservice)
+19. [Working with JSON in .NET](#working-with-json-in-net)
 
 ---
 
@@ -873,6 +884,641 @@ app.UseExceptionHandler(errorApp =>
 dotnet-counters monitor --process-id <pid> System.Runtime Microsoft.AspNetCore.Hosting
 ```
 
+# Basic & Intermediate .NET Full‑Stack Developer Notes (Extended)
+
+*Additional topics for developers with 1–4 years of experience*
+
+This document extends the previous notes with more practical concepts you'll encounter in everyday .NET development.
+
 ---
 
-*These notes provide a solid foundation for basic to intermediate .NET full‑stack development. Continue to build projects and explore official Microsoft documentation to deepen your understanding.*
+
+
+---
+
+## LINQ Fundamentals
+
+### 31. What is LINQ and what are the two main syntaxes?
+
+**Answer:**  
+LINQ (Language Integrated Query) allows you to write queries against data sources (collections, databases, XML) directly in C#.
+
+**Two syntaxes:**
+- **Query syntax** (SQL‑like)
+- **Method syntax** (fluent extension methods)
+
+**Example:**
+```csharp
+List<int> numbers = new List<int> { 1, 2, 3, 4, 5, 6 };
+
+// Query syntax
+var evenNumbersQuery = from n in numbers
+                       where n % 2 == 0
+                       select n;
+
+// Method syntax
+var evenNumbersMethod = numbers.Where(n => n % 2 == 0);
+```
+
+---
+
+### 32. Explain commonly used LINQ methods: `Where`, `Select`, `OrderBy`, `GroupBy`, `FirstOrDefault`, `Any`.
+
+**Answer:**
+
+| Method           | Purpose                                                         | Example                                                       |
+|------------------|-----------------------------------------------------------------|---------------------------------------------------------------|
+| `Where`          | Filters a sequence based on a predicate.                        | `numbers.Where(n => n > 10)`                                  |
+| `Select`         | Projects each element into a new form.                          | `products.Select(p => p.Name)`                                |
+| `OrderBy`        | Sorts elements in ascending order.                              | `products.OrderBy(p => p.Price)`                              |
+| `GroupBy`        | Groups elements by a key.                                       | `products.GroupBy(p => p.CategoryId)`                         |
+| `FirstOrDefault` | Returns the first element or default if none.                   | `products.FirstOrDefault(p => p.Id == 1)`                     |
+| `Any`            | Checks if any element satisfies a condition (returns `bool`).   | `products.Any(p => p.Price > 1000)`                           |
+
+**Examples:**
+```csharp
+var productNames = products.Select(p => p.Name).ToList();
+var cheapProducts = products.Where(p => p.Price < 50).ToList();
+var sortedByName = products.OrderBy(p => p.Name).ToList();
+var categoryGroups = products.GroupBy(p => p.CategoryId);
+bool hasExpensive = products.Any(p => p.Price > 1000);
+Product first = products.FirstOrDefault(p => p.Id == 5);
+```
+
+---
+
+### 33. What is deferred execution in LINQ?
+
+**Answer:**  
+LINQ queries are not executed when they are defined, but only when the results are actually enumerated (e.g., with `foreach`, `ToList()`, `Count()`). This allows queries to be composed efficiently.
+
+**Example:**
+```csharp
+var query = products.Where(p => p.Price > 100);  // Query defined, not executed yet
+var list = query.ToList();                       // Execution happens here
+```
+
+**Important:** If the underlying data changes before enumeration, the query will reflect those changes.
+
+---
+
+## Authentication and Authorisation in ASP.NET Core
+
+### 34. How do you add JWT Bearer authentication to an ASP.NET Core API?
+
+**Answer:**  
+JWT (JSON Web Token) is commonly used to secure APIs. Clients include the token in the `Authorization` header.
+
+**Step 1: Install package:**
+```
+Microsoft.AspNetCore.Authentication.JwtBearer
+```
+
+**Step 2: Configure in `Program.cs`:**
+```csharp
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            ValidIssuer = builder.Configuration["Jwt:Issuer"],
+            ValidAudience = builder.Configuration["Jwt:Audience"],
+            IssuerSigningKey = new SymmetricSecurityKey(
+                Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"]))
+        };
+    });
+
+builder.Services.AddAuthorization();
+```
+
+**Step 3: Protect endpoints with `[Authorize]`:**
+```csharp
+[Authorize]
+[HttpGet]
+public IActionResult GetSecureData() => Ok("This is protected.");
+```
+
+**Step 4: Generate a token (login endpoint):**
+```csharp
+[HttpPost("login")]
+public IActionResult Login([FromBody] LoginModel model)
+{
+    // Validate credentials...
+    var tokenHandler = new JwtSecurityTokenHandler();
+    var key = Encoding.UTF8.GetBytes(_config["Jwt:Key"]);
+    var tokenDescriptor = new SecurityTokenDescriptor
+    {
+        Subject = new ClaimsIdentity(new[] { new Claim("id", user.Id.ToString()) }),
+        Expires = DateTime.UtcNow.AddHours(1),
+        Issuer = _config["Jwt:Issuer"],
+        Audience = _config["Jwt:Audience"],
+        SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key),
+                                                    SecurityAlgorithms.HmacSha256Signature)
+    };
+    var token = tokenHandler.CreateToken(tokenDescriptor);
+    return Ok(new { token = tokenHandler.WriteToken(token) });
+}
+```
+
+---
+
+### 35. What is the difference between Authentication and Authorisation?
+
+| Concept         | Description                                                                 |
+|-----------------|-----------------------------------------------------------------------------|
+| **Authentication** | Verifies **who** the user is (e.g., username/password, token).            |
+| **Authorisation**   | Determines **what** the user is allowed to do (e.g., roles, policies).    |
+
+**Example:**
+```csharp
+[Authorize]                        // Authentication required
+[Authorize(Roles = "Admin")]       // Authentication + role authorisation
+[Authorize(Policy = "AtLeast21")]  // Custom policy authorisation
+```
+
+---
+
+## Working with Files and Streams
+
+### 36. How do you read and write text files in C#?
+
+**Answer:**  
+Use `File` static methods for simple operations, or `StreamReader`/`StreamWriter` for more control.
+
+**Read all text:**
+```csharp
+string content = await File.ReadAllTextAsync("data.txt");
+string[] lines = await File.ReadAllLinesAsync("data.txt");
+```
+
+**Write all text:**
+```csharp
+await File.WriteAllTextAsync("output.txt", "Hello World");
+await File.WriteAllLinesAsync("output.txt", new[] { "Line1", "Line2" });
+```
+
+**Using streams (better for large files):**
+```csharp
+using var reader = new StreamReader("largefile.txt");
+string line;
+while ((line = await reader.ReadLineAsync()) != null)
+{
+    Console.WriteLine(line);
+}
+
+using var writer = new StreamWriter("output.txt");
+await writer.WriteLineAsync("Some content");
+```
+
+---
+
+### 37. How do you upload a file in ASP.NET Core?
+
+**Answer:**  
+Use `IFormFile` in the action method.
+
+**Controller:**
+```csharp
+[HttpPost("upload")]
+public async Task<IActionResult> UploadFile(IFormFile file)
+{
+    if (file == null || file.Length == 0)
+        return BadRequest("No file uploaded.");
+
+    var filePath = Path.Combine("uploads", file.FileName);
+    using var stream = new FileStream(filePath, FileMode.Create);
+    await file.CopyToAsync(stream);
+
+    return Ok(new { filePath });
+}
+```
+
+**Multiple files:**
+```csharp
+[HttpPost("upload-multiple")]
+public async Task<IActionResult> UploadMultiple(List<IFormFile> files)
+{
+    foreach (var file in files)
+    {
+        // Save each file...
+    }
+    return Ok();
+}
+```
+
+---
+
+## Caching Strategies
+
+### 38. What is `IMemoryCache` and how do you use it?
+
+**Answer:**  
+`IMemoryCache` stores data in the memory of the web server. It's fast but not shared across multiple servers.
+
+**Registration:**
+```csharp
+builder.Services.AddMemoryCache();
+```
+
+**Usage:**
+```csharp
+public class ProductService
+{
+    private readonly IMemoryCache _cache;
+    public ProductService(IMemoryCache cache) => _cache = cache;
+
+    public async Task<Product> GetProductAsync(int id)
+    {
+        string cacheKey = $"product-{id}";
+        if (!_cache.TryGetValue(cacheKey, out Product product))
+        {
+            product = await FetchFromDatabaseAsync(id);
+            var cacheOptions = new MemoryCacheEntryOptions()
+                .SetSlidingExpiration(TimeSpan.FromMinutes(5));
+            _cache.Set(cacheKey, product, cacheOptions);
+        }
+        return product;
+    }
+}
+```
+
+**Shorter with `GetOrCreateAsync`:**
+```csharp
+public async Task<Product> GetProductAsync(int id)
+{
+    return await _cache.GetOrCreateAsync($"product-{id}", async entry =>
+    {
+        entry.SlidingExpiration = TimeSpan.FromMinutes(5);
+        return await FetchFromDatabaseAsync(id);
+    });
+}
+```
+
+---
+
+## Middleware in Depth
+
+### 39. How do you create custom middleware for request/response logging?
+
+**Answer:**  
+Middleware is a class with an `InvokeAsync` method.
+
+**Example:**
+```csharp
+public class RequestLoggingMiddleware
+{
+    private readonly RequestDelegate _next;
+    private readonly ILogger<RequestLoggingMiddleware> _logger;
+
+    public RequestLoggingMiddleware(RequestDelegate next, ILogger<RequestLoggingMiddleware> logger)
+    {
+        _next = next;
+        _logger = logger;
+    }
+
+    public async Task InvokeAsync(HttpContext context)
+    {
+        _logger.LogInformation($"Request: {context.Request.Method} {context.Request.Path}");
+        await _next(context);
+        _logger.LogInformation($"Response: {context.Response.StatusCode}");
+    }
+}
+
+// Register in Program.cs
+app.UseMiddleware<RequestLoggingMiddleware>();
+```
+
+**Simpler inline middleware:**
+```csharp
+app.Use(async (context, next) =>
+{
+    Console.WriteLine($"Request: {context.Request.Path}");
+    await next();
+    Console.WriteLine($"Response: {context.Response.StatusCode}");
+});
+```
+
+---
+
+## Configuration Management
+
+### 40. How do you use different configuration files for different environments?
+
+**Answer:**  
+ASP.NET Core loads `appsettings.json` plus `appsettings.{Environment}.json` based on the `ASPNETCORE_ENVIRONMENT` variable.
+
+**Files:**
+- `appsettings.json` – base settings
+- `appsettings.Development.json` – overrides for development
+- `appsettings.Production.json` – overrides for production
+
+**Setting environment:**
+```
+set ASPNETCORE_ENVIRONMENT=Development
+```
+
+**Access in code:** Use `IConfiguration` – it automatically merges files with the environment‑specific file overriding base values.
+
+---
+
+### 41. What are User Secrets and when should you use them?
+
+**Answer:**  
+User Secrets store sensitive data (connection strings, API keys) during development **outside** the project folder, preventing accidental commits to source control.
+
+**Enable User Secrets:**
+```
+dotnet user-secrets init
+dotnet user-secrets set "ConnectionStrings:Default" "your-connection-string"
+```
+
+**Access:** Same as any configuration.
+```csharp
+var connStr = _config.GetConnectionString("Default");
+```
+
+**Important:** User Secrets are for **development only**. Use Azure Key Vault or environment variables in production.
+
+---
+
+## Unit Testing Basics
+
+### 42. How do you write a unit test using xUnit?
+
+**Answer:**  
+xUnit is a popular testing framework for .NET.
+
+**Example test class:**
+```csharp
+using Xunit;
+
+public class CalculatorTests
+{
+    [Fact]
+    public void Add_TwoPositiveNumbers_ReturnsSum()
+    {
+        // Arrange
+        var calculator = new Calculator();
+        // Act
+        int result = calculator.Add(2, 3);
+        // Assert
+        Assert.Equal(5, result);
+    }
+
+    [Theory]
+    [InlineData(2, 3, 5)]
+    [InlineData(-1, 1, 0)]
+    [InlineData(0, 0, 0)]
+    public void Add_VariousInputs_ReturnsExpected(int a, int b, int expected)
+    {
+        var calculator = new Calculator();
+        int result = calculator.Add(a, b);
+        Assert.Equal(expected, result);
+    }
+}
+```
+
+---
+
+### 43. What is mocking and how do you use Moq?
+
+**Answer:**  
+Mocking creates fake objects that simulate dependencies, allowing you to test a class in isolation.
+
+**Example using Moq:**
+```csharp
+using Moq;
+using Xunit;
+
+public class ProductServiceTests
+{
+    [Fact]
+    public async Task GetProduct_ReturnsProductFromRepository()
+    {
+        // Arrange
+        var mockRepo = new Mock<IProductRepository>();
+        mockRepo.Setup(repo => repo.GetByIdAsync(1))
+                .ReturnsAsync(new Product { Id = 1, Name = "Test" });
+
+        var service = new ProductService(mockRepo.Object);
+
+        // Act
+        var product = await service.GetProductAsync(1);
+
+        // Assert
+        Assert.Equal("Test", product.Name);
+        mockRepo.Verify(repo => repo.GetByIdAsync(1), Times.Once);
+    }
+}
+```
+
+---
+
+## Version Control with Git (Essentials)
+
+### 44. What are the basic Git commands every developer should know?
+
+| Command                              | Purpose                                                   |
+|--------------------------------------|-----------------------------------------------------------|
+| `git clone <url>`                    | Copy a remote repository to your local machine.           |
+| `git status`                         | Show changed files.                                       |
+| `git add <file>` / `git add .`       | Stage changes for commit.                                 |
+| `git commit -m "message"`            | Commit staged changes with a message.                     |
+| `git push`                           | Upload local commits to remote repository.                |
+| `git pull`                           | Fetch and merge changes from remote.                      |
+| `git branch`                         | List branches.                                            |
+| `git checkout -b <branch-name>`      | Create and switch to a new branch.                        |
+| `git merge <branch>`                 | Merge another branch into current branch.                 |
+| `git log --oneline`                  | Show commit history.                                      |
+
+---
+
+### 45. What is the purpose of a `.gitignore` file?
+
+**Answer:**  
+`.gitignore` tells Git which files or folders to **ignore** (not track). Common entries include build outputs, user secrets, and IDE‑specific files.
+
+**Example `.gitignore` for .NET:**
+```
+bin/
+obj/
+*.user
+appsettings.Development.json
+.vs/
+```
+
+---
+
+## Error Handling and Logging Best Practices
+
+### 46. How do you implement global exception handling in ASP.NET Core?
+
+**Answer:**  
+Use `UseExceptionHandler` middleware.
+
+```csharp
+app.UseExceptionHandler("/error");
+```
+
+**Custom error endpoint:**
+```csharp
+[ApiController]
+[Route("error")]
+public class ErrorController : ControllerBase
+{
+    [HttpGet]
+    public IActionResult HandleError()
+    {
+        var exception = HttpContext.Features.Get<IExceptionHandlerFeature>()?.Error;
+        // Log exception...
+        return Problem(title: "An error occurred", statusCode: 500);
+    }
+}
+```
+
+**For APIs, return ProblemDetails:**
+```csharp
+app.UseExceptionHandler(exceptionHandlerApp =>
+{
+    exceptionHandlerApp.Run(async context =>
+    {
+        context.Response.StatusCode = 500;
+        context.Response.ContentType = "application/problem+json";
+        var error = context.Features.Get<IExceptionHandlerFeature>()?.Error;
+        await context.Response.WriteAsJsonAsync(new { error = error?.Message });
+    });
+});
+```
+
+---
+
+### 47. How do you use `ILogger` effectively?
+
+**Answer:**  
+Inject `ILogger<T>` into your classes and use log levels appropriately.
+
+**Log levels (increasing severity):** `Trace`, `Debug`, `Information`, `Warning`, `Error`, `Critical`.
+
+**Example:**
+```csharp
+public class OrderService
+{
+    private readonly ILogger<OrderService> _logger;
+    public OrderService(ILogger<OrderService> logger) => _logger = logger;
+
+    public void ProcessOrder(Order order)
+    {
+        _logger.LogInformation("Processing order {OrderId}", order.Id);
+        try
+        {
+            // ...
+            _logger.LogDebug("Order processed successfully");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to process order {OrderId}", order.Id);
+            throw;
+        }
+    }
+}
+```
+
+**Structured logging:** Use placeholders (`{OrderId}`) instead of string concatenation for better performance and searchability.
+
+---
+
+## Background Tasks with `IHostedService`
+
+### 48. How do you run a background task that executes periodically?
+
+**Answer:**  
+Implement `BackgroundService` (a base class for `IHostedService`).
+
+**Example – a timed service that runs every 30 seconds:**
+```csharp
+public class TimedBackgroundService : BackgroundService
+{
+    private readonly ILogger<TimedBackgroundService> _logger;
+
+    public TimedBackgroundService(ILogger<TimedBackgroundService> logger) => _logger = logger;
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            _logger.LogInformation("Background task running at: {time}", DateTimeOffset.Now);
+            // Do work...
+
+            await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken);
+        }
+    }
+}
+
+// Register in Program.cs
+builder.Services.AddHostedService<TimedBackgroundService>();
+```
+
+**Important:** The `stoppingToken` signals when the application is shutting down. Always respect it to allow graceful shutdown.
+
+---
+
+## Working with JSON in .NET
+
+### 49. How do you serialise and deserialise JSON in .NET?
+
+**Answer:**  
+Use `System.Text.Json` (built‑in, fast) or `Newtonsoft.Json` (popular third‑party).
+
+**Serialisation (object to JSON):**
+```csharp
+var product = new Product { Id = 1, Name = "Laptop", Price = 999.99m };
+string json = JsonSerializer.Serialize(product);
+```
+
+**Deserialisation (JSON to object):**
+```csharp
+string json = @"{ ""Id"": 1, ""Name"": ""Laptop"", ""Price"": 999.99 }";
+Product product = JsonSerializer.Deserialize<Product>(json);
+```
+
+**Customising options:**
+```csharp
+var options = new JsonSerializerOptions
+{
+    PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+    WriteIndented = true
+};
+string json = JsonSerializer.Serialize(product, options);
+```
+
+---
+
+### 50. How do you handle JSON with different property names using `JsonPropertyName`?
+
+**Answer:**  
+Use `[JsonPropertyName]` attribute to map C# properties to JSON fields with different names.
+
+**Example:**
+```csharp
+public class Product
+{
+    [JsonPropertyName("productId")]
+    public int Id { get; set; }
+
+    [JsonPropertyName("productName")]
+    public string Name { get; set; }
+
+    [JsonPropertyName("priceInUsd")]
+    public decimal Price { get; set; }
+}
+```
+
+Now the JSON will use `productId`, `productName`, and `priceInUsd` instead of the C# property names.
+
+---
+
+*This extended set of notes covers additional essential topics for intermediate .NET full‑stack developers. Practice these concepts by building small projects to solidify your understanding.*
