@@ -838,43 +838,132 @@ public class Product
 **Answer:**  
 Use data annotations and let the framework validate automatically. The `[ApiController]` attribute enables automatic validation error responses.
 
-**Example:**
+Here's the model validation explanation with detailed inline comments for clarity:
+
 ```csharp
+// ============================================
+// MODEL VALIDATION IN ASP.NET CORE
+// ============================================
+
+// Step 1: Define the model with validation attributes
 public class Product
 {
     public int Id { get; set; }
 
+    // Required attribute: field cannot be null or empty
     [Required(ErrorMessage = "Name is required")]
+    // StringLength: maximum character limit
     [StringLength(50)]
     public string Name { get; set; }
 
+    // Range attribute: value must be between 0.01 and 9999.99
     [Range(0.01, 9999.99)]
     public decimal Price { get; set; }
 }
 
-[HttpPost]
-public IActionResult Create(Product product)
+// Step 2: Controller action with manual ModelState check
+[ApiController]  // This attribute enables automatic 400 responses for invalid models
+[Route("api/[controller]")]
+public class ProductsController : ControllerBase
 {
-    if (!ModelState.IsValid)
-        return BadRequest(ModelState);
-    // Proceed...
+    // POST /api/products
+    // Request body: { "name": "Laptop", "price": 999.99 }
+    [HttpPost]
+    public IActionResult Create(Product product)
+    {
+        // Check if validation passed (true if all attributes are satisfied)
+        if (!ModelState.IsValid)
+        {
+            // Returns 400 Bad Request with detailed error information
+            return BadRequest(ModelState);
+        }
+
+        // Proceed with business logic if validation succeeds
+        // ... save to database, etc.
+        return Ok(product);
+    }
 }
 ```
 
-**Returning custom validation response:**
+---
+
+### Customising the Validation Response Format
+
+The default error response includes technical details. To return a cleaner, client‑friendly format, override `ApiBehaviorOptions` in `Program.cs`:
+
 ```csharp
-services.Configure<ApiBehaviorOptions>(options =>
+// Program.cs - Configure custom validation error response
+builder.Services.Configure<ApiBehaviorOptions>(options =>
 {
+    // This factory runs when ModelState is invalid (automatic validation triggered by [ApiController])
     options.InvalidModelStateResponseFactory = context =>
     {
+        // Transform ModelState dictionary into a simplified errors object
         var errors = context.ModelState
-            .Where(e => e.Value.Errors.Count > 0)
-            .ToDictionary(kvp => kvp.Key, kvp => kvp.Value.Errors.Select(e => e.ErrorMessage).ToArray());
+            // Keep only entries that have validation errors
+            .Where(entry => entry.Value.Errors.Count > 0)
+            .ToDictionary(
+                keySelector: kvp => kvp.Key,                                    // Field name (e.g., "Name")
+                elementSelector: kvp => kvp.Value.Errors                         // Array of error objects
+                                          .Select(e => e.ErrorMessage)           // Extract just the message string
+                                          .ToArray()                             // Convert to array
+            );
+
+        // Return a 400 Bad Request with custom JSON structure
         return new BadRequestObjectResult(new { Errors = errors });
     };
 });
 ```
 
+---
+
+### Example Request and Response
+
+**Invalid Request (POST `/api/products`):**
+```json
+{
+    "name": "",           // Empty string fails [Required]
+    "price": 0            // 0 fails [Range(0.01, 9999.99)]
+}
+```
+
+**Custom Response (with the above configuration):**
+```json
+{
+    "errors": {
+        "Name": ["Name is required"],
+        "Price": ["The field Price must be between 0.01 and 9999.99."]
+    }
+}
+```
+
+**Default Response (without customisation):**
+```json
+{
+    "type": "https://tools.ietf.org/html/rfc7231#section-6.5.1",
+    "title": "One or more validation errors occurred.",
+    "status": 400,
+    "traceId": "00-abc123...",
+    "errors": {
+        "Name": ["Name is required"],
+        "Price": ["The field Price must be between 0.01 and 9999.99."]
+    }
+}
+```
+
+---
+
+### Key Points to Remember
+
+| Concept                              | Explanation                                                                           |
+|--------------------------------------|---------------------------------------------------------------------------------------|
+| `[ApiController]`                    | Automatically triggers validation and returns `400 Bad Request` for invalid models.   |
+| `ModelState.IsValid`                 | Boolean property that reflects whether **all** validation attributes passed.           |
+| `BadRequest(ModelState)`             | Returns a `400` response containing the raw validation errors.                         |
+| `InvalidModelStateResponseFactory`   | Custom delegate that formats the error response exactly as you need.                   |
+| Data Annotations                    | Attributes like `[Required]`, `[StringLength]`, `[Range]` that define validation rules.|
+
+> 💡 **Best Practice:** Always keep validation logic **in the model** using attributes. Use `InvalidModelStateResponseFactory` to provide a consistent error shape across your entire API.
 ---
 
 ### 16. What are action filters and when would you use them?
