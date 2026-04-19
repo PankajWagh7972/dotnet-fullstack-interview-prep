@@ -342,6 +342,392 @@ services.Configure<AppSettings>(Configuration.GetSection("AppSettings"));
 
 // Inject IOptions<AppSettings> to use
 ```
+## Options Pattern in ASP.NET Core
+
+The **Options Pattern** provides a strongly‑typed way to access configuration settings. It decouples configuration from consuming classes, enables validation, and supports reloading changes.
+
+---
+
+### 1. Why Use the Options Pattern?
+
+| Without Options Pattern                     | With Options Pattern                                   |
+|---------------------------------------------|--------------------------------------------------------|
+| Magic strings (`_config["Key"]`)            | Strongly‑typed properties (`_options.Key`)             |
+| No compile‑time checking                    | Full IntelliSense and refactoring support              |
+| Scattered configuration access              | Centralised settings class                             |
+| Manual validation code                      | Built‑in validation with `DataAnnotations`             |
+| Hard to unit test                           | Easy to mock `IOptions<T>`                             |
+
+---
+
+### 2. Basic Setup
+
+**Step 1: Define a Settings Class**
+```csharp
+public class EmailSettings
+{
+    public string SmtpServer { get; set; } = string.Empty;
+    public int Port { get; set; }
+    public bool EnableSsl { get; set; }
+    public string FromAddress { get; set; } = string.Empty;
+}
+```
+
+**Step 2: Add Configuration in `appsettings.json`**
+```json
+{
+  "Email": {
+    "SmtpServer": "smtp.example.com",
+    "Port": 587,
+    "EnableSsl": true,
+    "FromAddress": "noreply@example.com"
+  }
+}
+```
+
+**Step 3: Register in `Program.cs`**
+```csharp
+builder.Services.Configure<EmailSettings>(builder.Configuration.GetSection("Email"));
+```
+
+**Step 4: Inject and Use**
+```csharp
+public class EmailService
+{
+    private readonly EmailSettings _settings;
+
+    public EmailService(IOptions<EmailSettings> options)
+    {
+        _settings = options.Value;
+    }
+
+    public void SendEmail(string to, string subject, string body)
+    {
+        using var client = new SmtpClient(_settings.SmtpServer, _settings.Port);
+        client.EnableSsl = _settings.EnableSsl;
+        // ...
+    }
+}
+```
+
+---
+
+### 3. Three Options Interfaces
+
+| Interface              | Lifetime | Reloads on Change | Use Case                                                      |
+|-----------------------|----------|-------------------|---------------------------------------------------------------|
+| **`IOptions<T>`**     | Singleton | No                | Settings that **never change** after app startup.             |
+| **`IOptionsSnapshot<T>`** | Scoped   | Yes (per request) | Settings that may change **between requests**.                |
+| **`IOptionsMonitor<T>`** | Singleton | Yes (real‑time)   | Settings that must react **immediately** to changes.          |
+
+---
+
+#### `IOptions<T>` – Static, Read‑Once
+
+```csharp
+public class SingletonService
+{
+    private readonly EmailSettings _settings;
+    public SingletonService(IOptions<EmailSettings> options) => _settings = options.Value;
+}
+```
+- `Value` is **cached** and **never updates** after the first access.
+- Suitable for settings from files that require app restart to change.
+
+---
+
+#### `IOptionsSnapshot<T>` – Scoped, Per‑Request Refresh
+
+```csharp
+public class ScopedService
+{
+    private readonly EmailSettings _settings;
+    public ScopedService(IOptionsSnapshot<EmailSettings> options) => _settings = options.Value;
+}
+```
+- `Value` is computed **once per scope** (in ASP.NET Core, per HTTP request).
+- If configuration source changes (e.g., Azure App Configuration, reloaded JSON file), the next request gets the **new values**.
+- **Best choice for most web applications** where config changes should apply gracefully.
+
+---
+
+#### `IOptionsMonitor<T>` – Real‑Time Notifications
+
+```csharp
+public class MonitorService : IDisposable
+{
+    private readonly IOptionsMonitor<EmailSettings> _monitor;
+    private readonly IDisposable _changeListener;
+    private EmailSettings _currentSettings;
+
+    public MonitorService(IOptionsMonitor<EmailSettings> monitor)
+    {
+        _monitor = monitor;
+        _currentSettings = monitor.CurrentValue;
+        _changeListener = monitor.OnChange(settings =>
+        {
+            _currentSettings = settings;
+            Console.WriteLine("Email settings updated!");
+        });
+    }
+
+    public void SendEmail()
+    {
+        // Always use _currentSettings or monitor.CurrentValue for latest
+        var settings = _monitor.CurrentValue;
+        // ...
+    }
+
+    public void Dispose() => _changeListener?.Dispose();
+}
+```
+- `CurrentValue` always returns the **latest** settings.
+- `OnChange` registers a callback that fires whenever configuration changes.
+- Useful for long‑lived singleton services that need to adapt immediately (e.g., background workers).
+
+---
+
+### 4. Named Options
+
+When you need **multiple instances** of the same settings class (e.g., different email providers).
+
+**Registration:**
+```csharp
+services.Configure<EmailSettings>("Smtp", builder.Configuration.GetSection("Email:Smtp"));
+services.Configure<EmailSettings>("SendGrid", builder.Configuration.GetSection("Email:SendGrid"));
+```
+
+**appsettings.json:**
+```json
+{
+  "Email": {
+    "Smtp": { "SmtpServer": "smtp.office365.com", "Port": 587 },
+    "SendGrid": { "SmtpServer": "smtp.sendgrid.net", "Port": 465 }
+  }
+}
+```
+
+**Consumption:**
+```csharp
+public class MultiEmailService
+{
+    private readonly EmailSettings _smtpSettings;
+    private readonly EmailSettings _sendGridSettings;
+
+    public MultiEmailService(IOptionsSnapshot<EmailSettings> optionsAccessor)
+    {
+        _smtpSettings = optionsAccessor.Get("Smtp");
+        _sendGridSettings = optionsAccessor.Get("SendGrid");
+    }
+}
+```
+
+**Alternative using `IOptionsMonitor<T>`:**
+```csharp
+var smtp = _monitor.Get("Smtp");
+```
+
+---
+
+### 5. Options Validation
+
+#### Using Data Annotations
+
+```csharp
+public class EmailSettings
+{
+    [Required(ErrorMessage = "SMTP server is required")]
+    public string SmtpServer { get; set; } = string.Empty;
+
+    [Range(1, 65535, ErrorMessage = "Port must be between 1 and 65535")]
+    public int Port { get; set; }
+
+    [EmailAddress]
+    public string FromAddress { get; set; } = string.Empty;
+}
+```
+
+**Enable validation at startup:**
+```csharp
+builder.Services.AddOptions<EmailSettings>()
+    .Bind(builder.Configuration.GetSection("Email"))
+    .ValidateDataAnnotations()
+    .ValidateOnStart(); // Throws exception at app start if invalid
+```
+
+#### Custom Validation Logic
+
+```csharp
+builder.Services.AddOptions<EmailSettings>()
+    .Bind(builder.Configuration.GetSection("Email"))
+    .Validate(settings =>
+    {
+        if (settings.EnableSsl && settings.Port == 25)
+            return false; // SSL on port 25 is unusual
+        return true;
+    }, "SSL should not be used with port 25.");
+```
+
+#### Complex Validation Across Multiple Settings
+
+```csharp
+builder.Services.AddOptions<EmailSettings>()
+    .Bind(builder.Configuration.GetSection("Email"))
+    .Validate<ILogger<EmailSettings>>((settings, logger) =>
+    {
+        if (string.IsNullOrEmpty(settings.FromAddress))
+        {
+            logger.LogWarning("FromAddress is empty, using default.");
+            settings.FromAddress = "default@example.com";
+        }
+        return true;
+    });
+```
+
+---
+
+### 6. Post‑Configuration
+
+Modify or compute settings after binding.
+
+```csharp
+builder.Services.PostConfigure<EmailSettings>(settings =>
+{
+    // Ensure FromAddress is never null
+    settings.FromAddress ??= "noreply@default.com";
+    
+    // Compute derived value
+    settings.ConnectionString = $"{settings.SmtpServer}:{settings.Port}";
+});
+```
+
+**For named options:**
+```csharp
+builder.Services.PostConfigure<EmailSettings>("Smtp", settings =>
+{
+    settings.FromAddress = "smtp@example.com";
+});
+```
+
+---
+
+### 7. Real‑World Example: Environment‑Aware Settings
+
+```csharp
+public class ApiSettings
+{
+    public string BaseUrl { get; set; } = string.Empty;
+    public int TimeoutSeconds { get; set; }
+    public RetryPolicy Retry { get; set; } = new();
+}
+
+public class RetryPolicy
+{
+    public int MaxAttempts { get; set; } = 3;
+    public int BackoffMilliseconds { get; set; } = 1000;
+}
+```
+
+**appsettings.json:**
+```json
+{
+  "ApiSettings": {
+    "BaseUrl": "https://api.example.com",
+    "TimeoutSeconds": 30,
+    "Retry": {
+      "MaxAttempts": 3,
+      "BackoffMilliseconds": 1000
+    }
+  }
+}
+```
+
+**appsettings.Development.json:**
+```json
+{
+  "ApiSettings": {
+    "BaseUrl": "https://localhost:5001",
+    "TimeoutSeconds": 60
+  }
+}
+```
+
+**Registration with validation:**
+```csharp
+builder.Services.AddOptions<ApiSettings>()
+    .Bind(builder.Configuration.GetSection("ApiSettings"))
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
+
+// Usage in typed HttpClient
+builder.Services.AddHttpClient<IApiClient, ApiClient>((sp, client) =>
+{
+    var settings = sp.GetRequiredService<IOptionsSnapshot<ApiSettings>>().Value;
+    client.BaseAddress = new Uri(settings.BaseUrl);
+    client.Timeout = TimeSpan.FromSeconds(settings.TimeoutSeconds);
+});
+```
+
+---
+
+### 8. Unit Testing with Options
+
+```csharp
+[Fact]
+public void EmailService_UsesConfiguredSettings()
+{
+    // Arrange
+    var settings = new EmailSettings { SmtpServer = "test.smtp.com", Port = 25 };
+    var options = Options.Create(settings); // Simple wrapper
+    var service = new EmailService(options);
+
+    // Act & Assert
+    // ...
+}
+
+// Using IOptionsSnapshot
+var mockSnapshot = new Mock<IOptionsSnapshot<EmailSettings>>();
+mockSnapshot.Setup(s => s.Value).Returns(settings);
+```
+
+---
+
+### 9. When to Use Each Interface – Decision Tree
+
+```
+┌─────────────────────────────────────────┐
+│ Does the setting change without app     │
+│ restart? (e.g., Azure App Config)       │
+└─────────────────────────────────────────┘
+        │                    │
+       YES                  NO
+        │                    │
+        ▼                    ▼
+┌───────────────────┐   ┌───────────────┐
+│ Does the consumer │   │ Use           │
+│ need immediate    │   │ IOptions<T>   │
+│ updates?          │   └───────────────┘
+└───────────────────┘
+        │                    │
+       YES                  NO
+        │                    │
+        ▼                    ▼
+┌───────────────────┐   ┌───────────────────┐
+│ Use               │   │ Use               │
+│ IOptionsMonitor<T>│   │ IOptionsSnapshot<T>│
+└───────────────────┘   └───────────────────┘
+```
+
+---
+
+### 10. Common Pitfalls
+
+| Pitfall                                      | Solution                                                     |
+|----------------------------------------------|--------------------------------------------------------------|
+| Injecting `IOptionsSnapshot<T>` into a Singleton | Use `IOptionsMonitor<T>` instead.                        |
+| Assuming `IOptions<T>.Value` updates          | It **never** updates; use Snapshot or Monitor.               |
+| Forgetting to call `ValidateOnStart()`        | Validation only runs when `Value` is accessed, or at startup if configured. |
+| Complex nested objects not binding            | Ensure property names match JSON keys **case‑insensitively**. |
 
 ---
 
