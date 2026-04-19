@@ -763,17 +763,23 @@ public class ProductsController : ControllerBase
 
 ### 14. Create a simple CRUD API controller.
 
+
 **Example – ProductsController:**
+Here's the controller code with added comments showing the actual endpoint URLs and HTTP methods:
+
 ```csharp
 [ApiController]
-[Route("api/[controller]")]
+[Route("api/[controller]")] // Base route: /api/products
 public class ProductsController : ControllerBase
 {
     private static List<Product> _products = new();
 
+    // GET /api/products
     [HttpGet]
     public IActionResult GetAll() => Ok(_products);
 
+    // GET /api/products/{id}
+    // Example: GET /api/products/5
     [HttpGet("{id}")]
     public IActionResult GetById(int id)
     {
@@ -782,14 +788,20 @@ public class ProductsController : ControllerBase
         return Ok(product);
     }
 
+    // POST /api/products
+    // Request Body: { "name": "Laptop", "price": 999.99 }
     [HttpPost]
     public IActionResult Create(Product product)
     {
         product.Id = _products.Count + 1;
         _products.Add(product);
+        // Returns 201 Created with Location header pointing to the new resource
         return CreatedAtAction(nameof(GetById), new { id = product.Id }, product);
     }
 
+    // PUT /api/products/{id}
+    // Example: PUT /api/products/3
+    // Request Body: { "name": "Updated Laptop", "price": 899.99 }
     [HttpPut("{id}")]
     public IActionResult Update(int id, Product updatedProduct)
     {
@@ -797,16 +809,18 @@ public class ProductsController : ControllerBase
         if (product == null) return NotFound();
         product.Name = updatedProduct.Name;
         product.Price = updatedProduct.Price;
-        return NoContent();
+        return NoContent(); // 204 No Content
     }
 
+    // DELETE /api/products/{id}
+    // Example: DELETE /api/products/2
     [HttpDelete("{id}")]
     public IActionResult Delete(int id)
     {
         var product = _products.FirstOrDefault(p => p.Id == id);
         if (product == null) return NotFound();
         _products.Remove(product);
-        return NoContent();
+        return NoContent(); // 204 No Content
     }
 }
 
@@ -817,7 +831,6 @@ public class Product
     public decimal Price { get; set; }
 }
 ```
-
 ---
 
 ### 15. How do you handle model validation in ASP.NET Core?
