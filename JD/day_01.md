@@ -3661,4 +3661,827 @@ The next topic in Day 1 is **Memory Management & Garbage Collection**, where we'
 * Memory leaks in .NET
 * Weak references
 * Common GC interview questions for experienced developers
+Excellent. This is one of the **hardest and most frequently asked** topics for experienced .NET developers. Interviewers ask it because it reveals whether you understand what happens **inside the CLR**, not just how to write C#.
+
+# Day 1 – Part 5: Memory Management & Garbage Collection (Deep Dive)
+
+> **Interview Importance: ⭐⭐⭐⭐⭐**
+
+---
+
+# Memory Management Architecture
+
+When a .NET application starts, the CLR (Common Language Runtime) manages memory for your application.
+
+A simplified view looks like this:
+
+```text
++--------------------------------------+
+|          Process Memory              |
++--------------------------------------+
+|   Code Segment                       |
+|--------------------------------------|
+|   Stack (per thread)                 |
+|--------------------------------------|
+|   Managed Heap                       |
+|--------------------------------------|
+|   Large Object Heap (LOH)            |
+|--------------------------------------|
+|   Native Heap                        |
++--------------------------------------+
+```
+
+Today we'll mainly discuss:
+
+* Stack
+* Managed Heap
+* Garbage Collector
+
+---
+
+# What is the Stack?
+
+The **stack** stores:
+
+* Local variables
+* Method parameters
+* Value types (when they are local variables)
+* References (addresses) to objects on the heap
+* Method call information
+
+Think of it as a stack of plates.
+
+```
+Push
+Push
+Push
+
+↓
+
+Pop
+Pop
+Pop
+```
+
+The **Last In, First Out (LIFO)** principle applies.
+
+---
+
+## Example
+
+```csharp
+public void Display()
+{
+    int age = 25;
+    double salary = 1000;
+
+    Print(age);
+}
+
+public void Print(int age)
+{
+}
+```
+
+Memory
+
+```
+STACK
+
+-------------------------
+Print()
+
+age = 25
+-------------------------
+
+Display()
+
+age = 25
+
+salary = 1000
+-------------------------
+```
+
+When `Print()` finishes,
+
+its stack frame disappears instantly.
+
+No Garbage Collector is involved.
+
+---
+
+## Characteristics of Stack
+
+* Very fast
+* Automatically managed
+* One stack per thread
+* Limited size
+* LIFO
+
+---
+
+# What is the Heap?
+
+The heap stores:
+
+* Objects
+* Arrays
+* Strings
+* Classes
+* Delegates
+
+Example
+
+```csharp
+Employee emp = new Employee();
+```
+
+Memory
+
+```
+STACK
+
+emp
+↓
+
+0x1020
+
+-------------------
+
+HEAP
+
+0x1020
+
+Employee
+
+Name
+
+Age
+```
+
+Notice
+
+The stack only stores
+
+```
+Reference
+
+↓
+
+0x1020
+```
+
+The actual object lives in the heap.
+
+---
+
+# Stack vs Heap
+
+| Stack                  | Heap                        |
+| ---------------------- | --------------------------- |
+| Stores local variables | Stores objects              |
+| Fast                   | Slower than stack           |
+| Automatic cleanup      | Garbage Collector cleans it |
+| Per thread             | Shared across threads       |
+| Fixed size             | Grows dynamically           |
+
+---
+
+# Why Objects Go to Heap
+
+Suppose
+
+```csharp
+Employee emp = new Employee();
+```
+
+Imagine the object is 50 KB.
+
+If stored on the stack,
+
+every method call would require copying 50 KB.
+
+Very expensive.
+
+Instead,
+
+the stack stores only an **8-byte reference** (on a 64-bit process).
+
+Efficient.
+
+---
+
+# Value Types vs Reference Types
+
+One of the most common interview questions.
+
+## Value Types
+
+Examples
+
+```csharp
+int
+
+double
+
+bool
+
+DateTime
+
+decimal
+
+struct
+
+enum
+```
+
+Usually stored directly in the stack when used as local variables.
+
+Example
+
+```csharp
+int x = 10;
+int y = x;
+```
+
+Memory
+
+```
+STACK
+
+x = 10
+
+y = 10
+```
+
+Two independent values.
+
+Changing one doesn't affect the other.
+
+---
+
+## Reference Types
+
+Examples
+
+```csharp
+class
+
+array
+
+delegate
+
+interface
+
+string
+```
+
+Example
+
+```csharp
+Employee e1 = new Employee();
+
+Employee e2 = e1;
+```
+
+Memory
+
+```
+STACK
+
+e1
+
+↓
+
+0x500
+
+e2
+
+↓
+
+0x500
+
+----------------
+
+HEAP
+
+Employee
+```
+
+Both variables point to the **same object**.
+
+Changing through one reference is visible through the other.
+
+---
+
+## Interview Question
+
+```csharp
+Employee a = new Employee();
+
+Employee b = a;
+
+b.Name = "John";
+```
+
+What is `a.Name`?
+
+Answer:
+
+```
+John
+```
+
+Because both references point to the same object.
+
+---
+
+# Boxing and Unboxing
+
+A favorite interview question.
+
+## Boxing
+
+Converting a value type into a reference type.
+
+Example
+
+```csharp
+int number = 10;
+
+object obj = number;
+```
+
+What happens?
+
+```
+STACK
+
+number = 10
+
+↓
+
+Heap
+
+Object(10)
+```
+
+A new object is created on the heap.
+
+This allocation has a performance cost.
+
+---
+
+## Unboxing
+
+```csharp
+object obj = 10;
+
+int x = (int)obj;
+```
+
+The value is copied back to a value type.
+
+---
+
+## Why Avoid Boxing?
+
+Imagine
+
+```csharp
+for(int i=0;i<1000000;i++)
+{
+    object obj=i;
+}
+```
+
+One million heap allocations.
+
+Extra GC pressure.
+
+Use generics instead.
+
+---
+
+# What is Garbage Collection?
+
+Garbage Collection automatically removes objects that are no longer reachable.
+
+Example
+
+```csharp
+Employee emp = new Employee();
+```
+
+Later
+
+```csharp
+emp = null;
+```
+
+Now no reference points to the object.
+
+```
+Heap
+
+Employee
+
+×
+
+Unreachable
+```
+
+Eventually,
+
+the Garbage Collector removes it.
+
+---
+
+# How does the Garbage Collector know an object is unused?
+
+The GC starts from **GC Roots**.
+
+GC Roots include:
+
+* Local variables on thread stacks
+* Static fields
+* CPU registers
+* Objects referenced by the runtime
+
+Example
+
+```
+GC Root
+
+↓
+
+Employee
+
+↓
+
+Department
+
+↓
+
+Manager
+```
+
+Everything reachable is **alive**.
+
+Anything not reachable becomes garbage.
+
+This process is called **reachability analysis**.
+
+---
+
+# GC Generations
+
+This is asked very frequently.
+
+.NET divides objects into generations.
+
+```
+Gen 0
+
+↓
+
+Gen 1
+
+↓
+
+Gen 2
+```
+
+---
+
+## Generation 0
+
+New objects.
+
+```csharp
+new Employee();
+```
+
+Every new object starts in Gen 0.
+
+Most objects die here.
+
+Examples:
+
+* Request DTOs
+* Temporary lists
+* LINQ results
+
+---
+
+## Generation 1
+
+Objects that survive one GC.
+
+```
+Gen 0
+
+↓
+
+Survived
+
+↓
+
+Gen 1
+```
+
+Acts as a buffer.
+
+---
+
+## Generation 2
+
+Long-lived objects.
+
+Examples:
+
+* Cache
+* Singleton services
+* Static collections
+
+```
+Gen 2
+
+↓
+
+Application Lifetime
+```
+
+GC runs here less frequently because collecting Gen 2 is expensive.
+
+---
+
+# Large Object Heap (LOH)
+
+Objects larger than **85,000 bytes** go to the Large Object Heap.
+
+Example
+
+```csharp
+byte[] file = new byte[100000];
+```
+
+This is approximately 100 KB, so it is allocated on the LOH.
+
+Characteristics:
+
+* Not allocated in Gen 0.
+* Collected with Gen 2 collections.
+* More expensive to manage.
+* Can become fragmented.
+
+Avoid repeatedly allocating large arrays when possible. Reuse buffers with techniques such as `ArrayPool<T>` if appropriate.
+
+---
+
+# Garbage Collection Process
+
+Suppose
+
+```csharp
+Employee e1 = new Employee();
+
+Employee e2 = new Employee();
+```
+
+Later
+
+```csharp
+e1 = null;
+```
+
+Heap
+
+```
+Employee
+
+×
+
+Garbage
+
+Employee
+
+Alive
+```
+
+GC performs:
+
+### 1. Mark
+
+Marks reachable objects.
+
+### 2. Sweep
+
+Removes unreachable objects.
+
+### 3. Compact
+
+Moves remaining objects together to reduce fragmentation and updates references.
+
+---
+
+# IDisposable vs Garbage Collection
+
+Many developers misunderstand this.
+
+Suppose
+
+```csharp
+SqlConnection connection = new SqlConnection();
+```
+
+GC manages **memory**, but it does **not** immediately release unmanaged resources such as:
+
+* Database connections
+* File handles
+* Network sockets
+
+That's why these types implement `IDisposable`.
+
+Example
+
+```csharp
+using var connection = new SqlConnection(connectionString);
+```
+
+When execution leaves the scope,
+
+`Dispose()` is called automatically.
+
+---
+
+# Finalizer
+
+Example
+
+```csharp
+class FileManager
+{
+    ~FileManager()
+    {
+    }
+}
+```
+
+Finalizers are executed by the runtime before memory is reclaimed, but **you cannot predict when** they will run.
+
+They are slower than `Dispose()` and should only be used when your class directly owns unmanaged resources.
+
+---
+
+# using Statement
+
+```csharp
+using(var file = new StreamReader(path))
+{
+}
+```
+
+Equivalent to
+
+```csharp
+StreamReader file = new StreamReader(path);
+
+try
+{
+}
+finally
+{
+    file.Dispose();
+}
+```
+
+---
+
+# Common Memory Leaks in .NET
+
+Developers often think .NET cannot have memory leaks.
+
+It can.
+
+Example:
+
+```csharp
+public static List<Employee> Employees = new();
+```
+
+If objects are continually added and never removed,
+
+the list keeps references alive.
+
+The GC cannot collect those objects.
+
+---
+
+Another example:
+
+Event subscriptions.
+
+```csharp
+publisher.SomeEvent += subscriber.Handler;
+```
+
+If you forget to unsubscribe when appropriate,
+
+the publisher still references the subscriber,
+
+keeping it alive longer than intended.
+
+---
+
+# WeakReference
+
+A `WeakReference` allows an object to be collected even though you still have a weak reference to it.
+
+Useful in specialized scenarios such as certain cache implementations.
+
+Not commonly used in everyday business applications.
+
+---
+
+# Common Interview Questions
+
+## Q1. Why is the stack faster than the heap?
+
+Answer:
+
+* Contiguous memory
+* LIFO allocation/deallocation
+* No GC required
+* No fragmentation management
+
+---
+
+## Q2. Can a value type live on the heap?
+
+Yes.
+
+Examples include:
+
+* When it's boxed.
+* When it's a field inside a reference type object.
+* When it's captured by certain compiler-generated structures (such as closures).
+
+So it's not accurate to say value types are **always** on the stack.
+
+---
+
+## Q3. Does `Dispose()` free memory?
+
+No.
+
+`Dispose()` releases unmanaged resources.
+
+Memory is still reclaimed by the Garbage Collector when the object becomes unreachable.
+
+---
+
+## Q4. Can we force Garbage Collection?
+
+Yes.
+
+```csharp
+GC.Collect();
+```
+
+But avoid calling it in production unless you have a very specific reason.
+
+The runtime usually knows better when to collect.
+
+---
+
+## Q5. Why is Gen 2 collection expensive?
+
+Because it scans long-lived objects and may include the Large Object Heap, making it significantly more work than collecting Gen 0.
+
+---
+
+## Q6. What causes memory leaks in .NET?
+
+Common causes include:
+
+* Static collections that keep growing.
+* Event subscriptions that aren't removed.
+* Long-lived caches without eviction.
+* Holding references longer than necessary.
+* Not disposing unmanaged resources promptly (resource leak rather than managed memory leak).
+
+---
+
+# Interview Tip
+
+A strong answer to:
+
+**"Explain Garbage Collection."**
+
+would be:
+
+> ".NET uses a generational Garbage Collector that automatically manages managed memory. New objects are allocated on the managed heap in Generation 0. During a collection, the GC starts from the GC Roots, marks all reachable objects, removes unreachable ones, and compacts memory to reduce fragmentation. Objects that survive collections are promoted to higher generations, with Gen 2 holding long-lived objects. The GC manages managed memory only; unmanaged resources such as database connections and file handles should be released using `IDisposable` and the `using` pattern."
+
+That answer demonstrates both conceptual understanding and practical knowledge expected from a senior .NET developer.
 
