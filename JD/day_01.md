@@ -2110,3 +2110,883 @@ The next topic is **Dependency Injection (DI)**. We'll go much deeper than just 
 * Common mistakes (like injecting a Scoped service into a Singleton).
 * How the built-in DI container works behind the scenes.
 * The most frequently asked DI interview questions for 5+ years of experience.
+
+
+Excellent. This is the **most important .NET interview topic**. Almost every 5+ years interview spends **20-30 minutes** on Dependency Injection.
+
+I'll explain it exactly the way interviewers expect.
+
+---
+
+# 1. What happens internally when ASP.NET Core resolves dependencies?
+
+This is a favorite senior-level question.
+
+Suppose we have:
+
+```csharp
+builder.Services.AddScoped<IEmployeeService, EmployeeService>();
+```
+
+And
+
+```csharp
+public class EmployeeController : ControllerBase
+{
+    private readonly IEmployeeService _service;
+
+    public EmployeeController(IEmployeeService service)
+    {
+        _service = service;
+    }
+}
+```
+
+---
+
+## Step 1: Application Starts
+
+When your application starts,
+
+```csharp
+builder.Services.AddScoped<IEmployeeService, EmployeeService>();
+```
+
+does **NOT** create an object.
+
+It simply stores a mapping inside the **Service Collection**.
+
+Think of it as a dictionary.
+
+```
+IEmployeeService
+        ↓
+EmployeeService
+Lifetime = Scoped
+```
+
+No object exists yet.
+
+---
+
+## Step 2: Build()
+
+When
+
+```csharp
+var app = builder.Build();
+```
+
+runs,
+
+ASP.NET Core creates the **Service Provider**.
+
+```
+ServiceCollection
+        ↓
+Build()
+        ↓
+ServiceProvider
+```
+
+The Service Provider is the **DI Container** responsible for creating objects.
+
+---
+
+## Step 3: HTTP Request Comes
+
+Suppose
+
+```
+GET /api/employees
+```
+
+comes in.
+
+ASP.NET Core determines that it needs
+
+```
+EmployeeController
+```
+
+---
+
+## Step 4: Constructor Inspection
+
+Using Reflection,
+
+ASP.NET Core checks
+
+```csharp
+public EmployeeController(IEmployeeService service)
+```
+
+It sees
+
+```
+Needs IEmployeeService
+```
+
+---
+
+## Step 5: Resolve Dependency
+
+ServiceProvider looks inside its registrations.
+
+```
+IEmployeeService
+
+↓
+
+EmployeeService
+```
+
+It creates
+
+```csharp
+new EmployeeService();
+```
+
+---
+
+## Step 6: Recursive Resolution
+
+Suppose EmployeeService itself needs
+
+```csharp
+public EmployeeService(
+    IEmployeeRepository repository,
+    ILogger<EmployeeService> logger)
+{
+}
+```
+
+Now DI resolves
+
+```
+Repository
+
+Logger
+```
+
+first.
+
+Then creates
+
+```
+EmployeeService
+```
+
+Finally
+
+```
+EmployeeController
+```
+
+This process is called the **Dependency Graph**.
+
+Example
+
+```
+Controller
+      ↓
+
+Service
+
+     ↓
+
+Repository
+
+     ↓
+
+DbContext
+```
+
+DI recursively resolves the graph from the bottom up.
+
+---
+
+## Step 7: Constructor Injection
+
+Finally
+
+```csharp
+new EmployeeController(service)
+```
+
+is created.
+
+Controller executes.
+
+---
+
+### Interview Answer
+
+> When a request arrives, ASP.NET Core uses the ServiceProvider to inspect the constructor of the requested class using reflection. It recursively resolves all registered dependencies according to their configured lifetimes, builds the dependency graph, creates the required objects, and injects them through the constructor before executing the request.
+
+---
+
+# 2. Constructor vs Property vs Method Injection
+
+There are three types.
+
+---
+
+## Constructor Injection ⭐⭐⭐⭐⭐
+
+Most common.
+
+```csharp
+public class EmployeeService
+{
+    private readonly ILogger<EmployeeService> _logger;
+
+    public EmployeeService(ILogger<EmployeeService> logger)
+    {
+        _logger = logger;
+    }
+}
+```
+
+Advantages
+
+* Mandatory dependency
+* Immutable
+* Easy testing
+* Preferred by Microsoft
+
+Use this **95% of the time**.
+
+---
+
+## Property Injection ⭐⭐
+
+```csharp
+public class EmployeeService
+{
+    public ILogger Logger { get; set; }
+}
+```
+
+Problem
+
+Someone can forget to set
+
+```
+Logger
+```
+
+Result
+
+```
+NullReferenceException
+```
+
+Not recommended.
+
+Used only by some third-party containers.
+
+---
+
+## Method Injection ⭐⭐
+
+```csharp
+public void Process(IEmailService email)
+{
+}
+```
+
+Dependency is passed only to one method.
+
+Useful when
+
+* Dependency is needed temporarily.
+* Optional.
+
+---
+
+### Which one should you use?
+
+Always answer:
+
+> Constructor Injection because it makes dependencies explicit, guarantees object validity, supports immutability, and is the recommended approach in ASP.NET Core.
+
+---
+
+# 3. Service Lifetimes
+
+This is almost guaranteed in interviews.
+
+---
+
+## Transient
+
+```csharp
+services.AddTransient<IEmailService, EmailService>();
+```
+
+New instance every time.
+
+```
+Controller
+
+↓
+
+EmailService (1)
+
+↓
+
+EmailService (2)
+
+↓
+
+EmailService (3)
+```
+
+Every injection
+
+↓
+
+New object.
+
+Good for
+
+* Lightweight services
+* Stateless helpers
+* Email services
+* PDF generators
+
+---
+
+## Scoped
+
+```csharp
+services.AddScoped<IEmployeeService, EmployeeService>();
+```
+
+One instance
+
+Per HTTP Request.
+
+Example
+
+Request 1
+
+```
+Controller A
+
+↓
+
+EmployeeService
+
+↓
+
+Repository
+```
+
+Controller B
+
+Same request
+
+↓
+
+Same EmployeeService instance.
+
+---
+
+Request 2
+
+New instance.
+
+Perfect for
+
+* DbContext
+* Business Services
+* Repository
+
+---
+
+## Singleton
+
+```csharp
+services.AddSingleton<ICacheService, CacheService>();
+```
+
+Created once.
+
+Lives until application stops.
+
+```
+Application Starts
+
+↓
+
+CacheService
+
+↓
+
+Every Request
+
+↓
+
+Same Object
+```
+
+Good for
+
+* Cache
+* Configuration
+* Logging
+* Memory Cache
+
+---
+
+## Real World Example
+
+### Transient
+
+```
+PdfGenerator
+
+EmailFormatter
+
+OTPGenerator
+```
+
+Each request can have a new instance.
+
+---
+
+### Scoped
+
+```
+OrderService
+
+CustomerService
+
+EF DbContext
+
+Repository
+```
+
+Each request gets one instance.
+
+---
+
+### Singleton
+
+```
+MemoryCache
+
+Configuration
+
+Application Settings
+
+Redis Connection
+```
+
+One instance for the application.
+
+---
+
+# 4. Common Mistakes
+
+## Mistake 1
+
+Inject Scoped into Singleton
+
+Example
+
+```csharp
+public class CacheService
+{
+    public CacheService(AppDbContext db)
+    {
+    }
+}
+```
+
+Registered as
+
+```csharp
+AddSingleton<CacheService>();
+```
+
+Problem
+
+DbContext is Scoped.
+
+Singleton lives forever.
+
+Scoped lives per request.
+
+Impossible.
+
+Runtime error
+
+```
+Cannot consume scoped service
+from singleton.
+```
+
+---
+
+## Why?
+
+```
+Singleton
+
+↓
+
+DbContext(Request 1)
+
+↓
+
+Request Ends
+
+↓
+
+DbContext Disposed
+
+↓
+
+Singleton Still Holds Reference
+
+❌
+```
+
+---
+
+## Solution
+
+Use
+
+```
+IServiceScopeFactory
+```
+
+or redesign the dependency.
+
+---
+
+## Mistake 2
+
+Using Singleton for DbContext
+
+Never.
+
+DbContext is **not thread-safe**.
+
+---
+
+## Mistake 3
+
+State inside Singleton
+
+```csharp
+public class Counter
+{
+    public int Count;
+}
+```
+
+Every request
+
+Same Count.
+
+Users affect each other.
+
+---
+
+## Mistake 4
+
+Creating services manually
+
+```csharp
+new EmailService()
+```
+
+Now DI can't
+
+* Manage lifetime
+* Mock it
+* Dispose it
+
+---
+
+# 5. How does the Built-in DI Container work?
+
+Internally
+
+```
+ServiceCollection
+
+↓
+
+Stores Registration
+
+↓
+
+Build()
+
+↓
+
+ServiceProvider
+
+↓
+
+ObjectFactory
+
+↓
+
+Reflection
+
+↓
+
+Constructor Selection
+
+↓
+
+Create Object
+
+↓
+
+Inject Dependencies
+```
+
+Important concepts
+
+### ServiceCollection
+
+Stores registrations.
+
+Like
+
+```
+Interface
+
+Implementation
+
+Lifetime
+```
+
+---
+
+### ServiceProvider
+
+Actually creates objects.
+
+---
+
+### ActivatorUtilities
+
+Uses reflection
+
+to invoke constructors.
+
+---
+
+### Constructor Selection
+
+If multiple constructors exist,
+
+DI chooses
+
+The constructor with the **most resolvable parameters**.
+
+Example
+
+```csharp
+public EmployeeService()
+{
+}
+```
+
+```csharp
+public EmployeeService(
+ILogger logger)
+{
+}
+```
+
+Second constructor is selected if `ILogger` is registered.
+
+---
+
+### Disposal
+
+If a service implements
+
+```csharp
+IDisposable
+```
+
+DI disposes it automatically when its lifetime ends.
+
+Example
+
+Scoped
+
+↓
+
+Disposed after request.
+
+Singleton
+
+↓
+
+Disposed when application shuts down.
+
+---
+
+# 6. Frequently Asked Interview Questions
+
+---
+
+## Q1 Why do we use Dependency Injection?
+
+Answer
+
+> Dependency Injection promotes loose coupling by allowing classes to depend on abstractions instead of concrete implementations. It improves maintainability, testability, and flexibility, making it easy to replace implementations or use mocks during testing.
+
+---
+
+## Q2 Why Constructor Injection over Property Injection?
+
+Answer
+
+* Mandatory dependency
+* No NullReference
+* Immutable
+* Easier testing
+* Microsoft recommended
+
+---
+
+## Q3 Difference between Scoped and Singleton?
+
+| Scoped                            | Singleton           |
+| --------------------------------- | ------------------- |
+| Per Request                       | Entire Application  |
+| Multiple Instances                | One Instance        |
+| Thread-safe by design per request | Must be thread-safe |
+| Good for DbContext                | Good for Cache      |
+
+---
+
+## Q4 Why is DbContext Scoped?
+
+Because
+
+* It represents a **Unit of Work** for a single request.
+* It is **not thread-safe**.
+* Sharing it across requests (Singleton) could lead to concurrency issues and data corruption.
+
+---
+
+## Q5 Can Singleton depend on Scoped?
+
+No.
+
+Because the Scoped object may be disposed while the Singleton is still alive.
+
+---
+
+## Q6 Can Scoped depend on Singleton?
+
+Yes.
+
+Singleton outlives Scoped.
+
+Safe.
+
+---
+
+## Q7 Can Transient depend on Scoped?
+
+Yes.
+
+As long as both are resolved within the same request scope.
+
+---
+
+## Q8 Can Singleton depend on Transient?
+
+Technically yes, but be careful.
+
+If the Transient is injected into the Singleton constructor, it is created **only once** during Singleton creation and effectively behaves like part of the Singleton. If you need a fresh Transient instance each time, resolve it through a factory (for example, `IServiceProvider` or a dedicated factory abstraction) instead of constructor injection.
+
+---
+
+## Q9 What happens if two implementations are registered?
+
+Example
+
+```csharp
+services.AddScoped<IPaymentService, StripePaymentService>();
+
+services.AddScoped<IPaymentService, RazorpayPaymentService>();
+```
+
+If you inject
+
+```csharp
+IPaymentService
+```
+
+the **last registration wins** (`RazorpayPaymentService` in this example).
+
+If you inject
+
+```csharp
+IEnumerable<IPaymentService>
+```
+
+you'll receive **both implementations** in the order they were registered.
+
+---
+
+## Q10 What is Service Locator? Why is it discouraged?
+
+Example
+
+```csharp
+public class OrderService
+{
+    private readonly IServiceProvider _provider;
+
+    public OrderService(IServiceProvider provider)
+    {
+        _provider = provider;
+    }
+
+    public void Process()
+    {
+        var email = _provider.GetRequiredService<IEmailService>();
+    }
+}
+```
+
+This is known as the **Service Locator pattern**.
+
+### Why is it discouraged?
+
+* Hides dependencies (you can't tell from the constructor what the class needs).
+* Makes testing harder because dependencies are resolved internally.
+* Violates the Dependency Inversion Principle by relying on the container instead of explicit abstractions.
+
+Prefer **constructor injection**, where dependencies are clearly declared.
+
+---
+
+# Interview Tip (5+ Years)
+
+A common senior-level question is:
+
+> **"Explain what happens when ASP.NET Core creates a controller using Dependency Injection."**
+
+A strong answer is:
+
+> "At application startup, services are registered in the `IServiceCollection`. When `Build()` is called, ASP.NET Core creates a `ServiceProvider`, which acts as the DI container. When a request reaches a controller, the framework inspects the controller's constructor using reflection, builds the dependency graph by recursively resolving registered services according to their lifetimes, creates the required objects, injects them through the constructor, and automatically disposes disposable services when their lifetime ends."
+
+If you can explain that flow confidently, it demonstrates a solid understanding of how DI works beyond just using `AddScoped()` or `AddSingleton()`.
