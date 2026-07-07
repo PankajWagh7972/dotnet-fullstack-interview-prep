@@ -969,4 +969,423 @@ A strong answer is:
 
 > I generally prefer **composition over inheritance** because it promotes loose coupling, better testability, and greater flexibility. Inheritance is useful when there's a clear and stable "is-a" relationship, such as a shared `BaseEntity` for common entity properties. For reusable behaviors like logging, notifications, payment processing, or file storage, I use composition with dependency injection, as it allows implementations to be changed or extended without affecting existing classes.
 
+These are exactly the kind of **follow-up questions** interviewers ask to determine whether you understand design principles beyond theory. Let's answer them in the way a **5.5+ years .NET Backend Developer** should.
+
+---
+
+# 1. Why did you choose inheritance instead of composition in your project?
+
+### What the interviewer is checking
+
+They want to know if you understand **"Inheritance vs Composition"** and can justify your design decisions.
+
+### Good Answer
+
+> In general, I prefer **composition over inheritance** because it creates loosely coupled and more flexible systems. However, I use inheritance when there is a clear **"is-a" relationship** and multiple classes genuinely share common behavior.
+>
+> For example, if I have a base `BaseEntity` containing common properties like `Id`, `CreatedDate`, `ModifiedDate`, and `CreatedBy`, then entities like `Customer`, `Order`, and `Product` can inherit from it because they all represent entities with shared characteristics.
+>
+> On the other hand, for behaviors like sending notifications, logging, or payment processing, I use composition through dependency injection instead of inheritance. This allows me to swap implementations without modifying existing classes.
+
+Example
+
+```csharp
+public abstract class BaseEntity
+{
+    public int Id { get; set; }
+
+    public DateTime CreatedDate { get; set; }
+}
+
+public class Customer : BaseEntity
+{
+    public string Name { get; set; }
+}
+```
+
+Composition Example
+
+```csharp
+public class OrderService
+{
+    private readonly IEmailService _emailService;
+
+    public OrderService(IEmailService emailService)
+    {
+        _emailService = emailService;
+    }
+}
+```
+
+### Interview Tip
+
+If they ask:
+
+> "Would you still choose inheritance today?"
+
+Say:
+
+> "Only when there is a strong 'is-a' relationship. Otherwise, I prefer composition because it provides better flexibility, testability, and maintainability."
+
+---
+
+# 2. Where did you apply polymorphism in your APIs?
+
+### What the interviewer wants
+
+They want to know whether you've actually used interfaces and dependency injection.
+
+### Example 1 (Best Example)
+
+```csharp
+public interface IPaymentService
+{
+    Task ProcessPaymentAsync();
+}
+```
+
+Implementation 1
+
+```csharp
+public class StripePaymentService : IPaymentService
+{
+}
+```
+
+Implementation 2
+
+```csharp
+public class RazorpayPaymentService : IPaymentService
+{
+}
+```
+
+Usage
+
+```csharp
+public class OrderController
+{
+    private readonly IPaymentService _paymentService;
+
+    public OrderController(IPaymentService paymentService)
+    {
+        _paymentService = paymentService;
+    }
+}
+```
+
+The controller doesn't know which payment provider is being used.
+
+At runtime,
+
+DI injects
+
+```
+StripePaymentService
+```
+
+or
+
+```
+RazorpayPaymentService
+```
+
+This is **runtime polymorphism**.
+
+---
+
+### Example from your experience
+
+Based on your background, you can answer like this:
+
+> In my .NET Core APIs, I frequently used interfaces with dependency injection. For example, I had interfaces like `IStudentService`, `IEmailService`, and `IFileStorageService`, each with one or more implementations. Controllers depended on the interfaces rather than concrete classes, allowing us to replace implementations or mock them during testing without changing controller code.
+
+That is a very practical answer.
+
+---
+
+# 3. How does Dependency Injection rely on abstraction and polymorphism?
+
+This is one of the most common senior-level questions.
+
+### Step 1: Abstraction
+
+Dependency Injection first requires **abstraction**.
+
+Example
+
+```csharp
+public interface ILogger
+{
+    void Log(string message);
+}
+```
+
+Notice
+
+The class doesn't depend on
+
+```csharp
+ConsoleLogger
+```
+
+It depends on
+
+```csharp
+ILogger
+```
+
+That is abstraction.
+
+---
+
+### Step 2: Polymorphism
+
+Now we have multiple implementations.
+
+```csharp
+public class ConsoleLogger : ILogger
+{
+}
+```
+
+```csharp
+public class FileLogger : ILogger
+{
+}
+```
+
+Now
+
+```csharp
+ILogger logger = new ConsoleLogger();
+```
+
+or
+
+```csharp
+ILogger logger = new FileLogger();
+```
+
+The variable type remains
+
+```csharp
+ILogger
+```
+
+but behavior changes.
+
+That is **runtime polymorphism**.
+
+---
+
+### Step 3: Dependency Injection
+
+Now the container injects the required implementation.
+
+```csharp
+services.AddScoped<ILogger, FileLogger>();
+```
+
+Controller
+
+```csharp
+public class ProductService
+{
+    public ProductService(ILogger logger)
+    {
+    }
+}
+```
+
+ProductService never creates
+
+```csharp
+new FileLogger()
+```
+
+Instead,
+
+the DI container injects it.
+
+---
+
+### Complete Interview Answer
+
+> Dependency Injection relies on abstraction because classes depend on interfaces rather than concrete implementations. It relies on polymorphism because multiple classes can implement the same interface, and the DI container decides which implementation to inject at runtime. This makes the application loosely coupled, easier to test, and easier to extend.
+
+That is exactly what interviewers want.
+
+---
+
+# 4. Can inheritance create tight coupling? How would you avoid it?
+
+### Answer
+
+Yes.
+
+Inheritance creates **compile-time coupling** between the parent and child classes.
+
+Suppose
+
+```csharp
+public class Employee
+{
+    public void Login()
+    {
+    }
+
+    public void Logout()
+    {
+    }
+}
+```
+
+Now
+
+```csharp
+public class Manager : Employee
+{
+}
+```
+
+If someone changes
+
+```csharp
+Employee
+```
+
+all child classes are affected.
+
+Sometimes,
+
+changing the base class can unintentionally break multiple derived classes.
+
+---
+
+### Another Example
+
+Suppose
+
+```csharp
+Vehicle
+```
+
+contains
+
+```csharp
+StartEngine()
+```
+
+Now
+
+```
+Car
+Bike
+Truck
+ElectricScooter
+```
+
+inherit from it.
+
+Later,
+
+ElectricScooter doesn't even have an engine.
+
+Now inheritance no longer models the real world correctly.
+
+This is known as a bad inheritance hierarchy.
+
+---
+
+### How to Avoid Tight Coupling
+
+Prefer **composition**.
+
+Instead of
+
+```csharp
+class Car : Vehicle
+```
+
+do
+
+```csharp
+class Car
+{
+    private readonly IEngine _engine;
+}
+```
+
+Now
+
+```
+PetrolEngine
+
+DieselEngine
+
+ElectricMotor
+```
+
+can all be injected.
+
+No inheritance required.
+
+This is much more flexible.
+
+---
+
+### Real Example
+
+Instead of
+
+```csharp
+NotificationService
+        ↑
+EmailNotification
+
+SMSNotification
+
+PushNotification
+```
+
+Use
+
+```csharp
+INotificationSender
+```
+
+```
+EmailSender
+
+SmsSender
+
+PushSender
+```
+
+Then inject
+
+```csharp
+INotificationSender
+```
+
+This allows adding new notification types without modifying existing code.
+
+---
+
+### Interview Answer
+
+> Yes, inheritance can introduce tight coupling because child classes become dependent on the implementation of the base class. Changes in the base class can impact all derived classes, making the system harder to maintain. To avoid this, I prefer composition over inheritance wherever possible by injecting dependencies through interfaces. I reserve inheritance for scenarios with a genuine "is-a" relationship and use composition for reusable behaviors.
+
+---
+
+# Interview Follow-up Question (Very Common)
+
+**Interviewer:** *"What do you prefer—Inheritance or Composition?"*
+
+A strong answer is:
+
+> I generally prefer **composition over inheritance** because it promotes loose coupling, better testability, and greater flexibility. Inheritance is useful when there's a clear and stable "is-a" relationship, such as a shared `BaseEntity` for common entity properties. For reusable behaviors like logging, notifications, payment processing, or file storage, I use composition with dependency injection, as it allows implementations to be changed or extended without affecting existing classes.
+
+This answer demonstrates that you understand not just the concepts, but also how they influence maintainable application architecture.
 
