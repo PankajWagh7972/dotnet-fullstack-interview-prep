@@ -4485,3 +4485,606 @@ would be:
 
 That answer demonstrates both conceptual understanding and practical knowledge expected from a senior .NET developer.
 
+This is one of the most misunderstood topics in .NET interviews. For **5+ years of experience**, interviewers expect you to know **why both exist, when they are called, how they work internally, and when to use each**.
+
+---
+
+# First, Why Do We Need IDisposable?
+
+The .NET Garbage Collector (GC) manages **managed memory**, but it **does not immediately release unmanaged resources**.
+
+Examples of unmanaged resources:
+
+* Database connections (`SqlConnection`)
+* File handles (`FileStream`)
+* Network sockets
+* Printer handles
+* Window handles
+* Native C/C++ memory
+
+Imagine this code:
+
+```csharp
+public void ReadFile()
+{
+    FileStream fs = new FileStream("test.txt", FileMode.Open);
+
+    // Read file
+
+    // Method ends
+}
+```
+
+You might think:
+
+> "The method ended, so the file should be closed."
+
+Not necessarily.
+
+Here's what happens:
+
+```
+Create FileStream
+        │
+        ▼
+GC Heap
+        │
+Method Ends
+        │
+Reference Lost
+        │
+File Still Open ❌
+        │
+GC runs later
+        │
+Memory Released
+```
+
+The GC decides **when** to collect the object. That could be seconds or even minutes later.
+
+During that time:
+
+* The file remains open.
+* Another application may not be able to access it.
+* You may run out of file handles.
+
+This is why `Dispose()` exists.
+
+---
+
+# What is IDisposable?
+
+`IDisposable` is an interface.
+
+```csharp
+public interface IDisposable
+{
+    void Dispose();
+}
+```
+
+It contains only one method:
+
+```csharp
+Dispose()
+```
+
+Its purpose is:
+
+> **Release unmanaged resources immediately when you're done with them.**
+
+---
+
+# Example
+
+```csharp
+using System;
+using System.IO;
+
+class Program
+{
+    static void Main()
+    {
+        FileStream stream = new FileStream("demo.txt", FileMode.Open);
+
+        stream.Dispose();
+    }
+}
+```
+
+When `Dispose()` is called:
+
+* File handle is closed immediately.
+* Memory is **not** necessarily freed immediately.
+* The object becomes eligible for GC when there are no references left.
+
+---
+
+# Using Statement
+
+Instead of:
+
+```csharp
+FileStream stream = new FileStream("demo.txt", FileMode.Open);
+
+stream.Dispose();
+```
+
+we write:
+
+```csharp
+using FileStream stream = new FileStream("demo.txt", FileMode.Open);
+```
+
+or
+
+```csharp
+using (FileStream stream = new FileStream("demo.txt", FileMode.Open))
+{
+    // Read file
+}
+```
+
+The compiler converts this into:
+
+```csharp
+FileStream stream = new FileStream("demo.txt", FileMode.Open);
+
+try
+{
+    // Read file
+}
+finally
+{
+    if (stream != null)
+        stream.Dispose();
+}
+```
+
+Even if an exception occurs:
+
+```csharp
+using FileStream stream = new FileStream("demo.txt", FileMode.Open);
+
+throw new Exception();
+```
+
+`Dispose()` is still called because it's inside the `finally` block.
+
+---
+
+# What is a Finalizer?
+
+A finalizer is a special method that the **Garbage Collector calls before reclaiming an object that has a finalizer**.
+
+Example:
+
+```csharp
+class Employee
+{
+    ~Employee()
+    {
+        Console.WriteLine("Finalizer Called");
+    }
+}
+```
+
+The syntax:
+
+```csharp
+~Employee()
+```
+
+is translated by the compiler into an override of `Finalize()`.
+
+You never call it yourself.
+
+The GC calls it automatically if needed.
+
+---
+
+# When Does the Finalizer Run?
+
+Suppose:
+
+```csharp
+Employee emp = new Employee();
+
+emp = null;
+```
+
+Now:
+
+```
+Employee Object
+
+↓
+
+No References
+
+↓
+
+Eligible for GC
+```
+
+Does the finalizer run immediately?
+
+**No.**
+
+The timing is completely controlled by the Garbage Collector.
+
+It may run:
+
+* after 5 seconds
+* after 1 minute
+* after 10 minutes
+
+You have **no guarantee**.
+
+---
+
+# Internal Working of a Finalizer
+
+Imagine:
+
+```csharp
+Employee emp = new Employee();
+```
+
+The object is created.
+
+```
+Heap
+
+Employee
+```
+
+Later:
+
+```csharp
+emp = null;
+```
+
+The object becomes unreachable.
+
+Instead of deleting it immediately:
+
+```
+GC
+
+↓
+
+Moves object to Finalization Queue
+```
+
+A dedicated Finalizer thread executes:
+
+```csharp
+~Employee()
+```
+
+Only after the finalizer completes can the object be reclaimed in a later GC cycle.
+
+So a finalizable object generally survives at least one extra collection, making it more expensive.
+
+---
+
+# Why are Finalizers Slow?
+
+Because:
+
+```
+GC
+
+↓
+
+Object Found
+
+↓
+
+Finalizer Queue
+
+↓
+
+Finalizer Thread
+
+↓
+
+Dispose Native Resources
+
+↓
+
+Next GC
+
+↓
+
+Memory Released
+```
+
+Multiple steps.
+
+Objects without finalizers can often be reclaimed in a single collection.
+
+---
+
+# IDisposable vs Finalizer
+
+| IDisposable                              | Finalizer                |
+| ---------------------------------------- | ------------------------ |
+| Called by developer (or `using`)         | Called by GC             |
+| Deterministic                            | Non-deterministic        |
+| Releases unmanaged resources immediately | Releases them eventually |
+| Fast                                     | Slower                   |
+| Recommended                              | Only when necessary      |
+
+---
+
+# Real Example – Database Connection
+
+Without `Dispose()`:
+
+```csharp
+public void Save()
+{
+    SqlConnection connection =
+        new SqlConnection(connectionString);
+
+    connection.Open();
+
+    // Save Data
+
+    // Method Ends
+}
+```
+
+Question:
+
+When is the connection closed?
+
+Answer:
+
+Nobody knows exactly.
+
+The GC will eventually collect the object, but until then the connection may remain open.
+
+---
+
+With `Dispose()`:
+
+```csharp
+using SqlConnection connection =
+    new SqlConnection(connectionString);
+
+connection.Open();
+
+// Save Data
+```
+
+As soon as execution leaves the scope:
+
+```
+Dispose()
+
+↓
+
+Connection Closed
+
+↓
+
+Immediately
+```
+
+---
+
+# Should We Always Implement a Finalizer?
+
+**No.**
+
+Most classes **should not** implement one.
+
+Example:
+
+```csharp
+class Student
+{
+    public string Name { get; set; }
+}
+```
+
+No unmanaged resources.
+
+No finalizer needed.
+
+No `IDisposable` needed either.
+
+---
+
+# When Should We Implement IDisposable?
+
+Whenever the class directly owns disposable resources.
+
+Example:
+
+```csharp
+class ReportGenerator : IDisposable
+{
+    private readonly FileStream _stream;
+
+    public ReportGenerator()
+    {
+        _stream = new FileStream("report.txt", FileMode.Create);
+    }
+
+    public void Dispose()
+    {
+        _stream.Dispose();
+    }
+}
+```
+
+---
+
+# When Should We Implement a Finalizer?
+
+Only when your class directly owns unmanaged resources that the GC doesn't know how to release.
+
+Examples:
+
+* Native pointers (`IntPtr`)
+* Win32 handles
+* Native C/C++ libraries
+
+In modern .NET, it's often better to wrap unmanaged resources in `SafeHandle`, which usually removes the need to write your own finalizer.
+
+---
+
+# The Dispose Pattern (Interview Favorite)
+
+When a class owns unmanaged resources, the recommended pattern is:
+
+```csharp
+public class ResourceManager : IDisposable
+{
+    private bool _disposed;
+
+    public void Dispose()
+    {
+        Dispose(true);
+
+        GC.SuppressFinalize(this);
+    }
+
+    protected virtual void Dispose(bool disposing)
+    {
+        if (_disposed)
+            return;
+
+        if (disposing)
+        {
+            // Dispose managed resources
+        }
+
+        // Release unmanaged resources
+
+        _disposed = true;
+    }
+
+    ~ResourceManager()
+    {
+        Dispose(false);
+    }
+}
+```
+
+### Why `GC.SuppressFinalize(this)`?
+
+Suppose:
+
+```csharp
+resource.Dispose();
+```
+
+The unmanaged resources have already been released.
+
+Without:
+
+```csharp
+GC.SuppressFinalize(this);
+```
+
+the GC would still schedule the finalizer later, wasting work.
+
+`GC.SuppressFinalize(this)` tells the runtime:
+
+> "The cleanup has already been done. Don't call the finalizer."
+
+This improves performance.
+
+---
+
+# Interview Questions
+
+### Q1. Can we call Dispose multiple times?
+
+Yes.
+
+A well-written `Dispose()` implementation should be **idempotent**—calling it multiple times should be safe.
+
+---
+
+### Q2. Does Dispose destroy the object?
+
+No.
+
+It releases resources.
+
+The object remains in memory until the GC collects it.
+
+---
+
+### Q3. Does the GC call Dispose?
+
+No.
+
+The GC calls the **finalizer** (if one exists), not `Dispose()`.
+
+`Dispose()` must be called explicitly (or indirectly through `using`).
+
+---
+
+### Q4. Why doesn't GC close database connections immediately?
+
+Because the GC manages **memory**, not application-level resource lifetimes.
+
+Database connections are scarce unmanaged resources and should be released deterministically.
+
+---
+
+### Q5. Can we have IDisposable without a Finalizer?
+
+**Yes**, and this is the most common case.
+
+Example:
+
+```csharp
+public class ReportService : IDisposable
+{
+    private readonly FileStream _stream =
+        new FileStream("report.txt", FileMode.Create);
+
+    public void Dispose()
+    {
+        _stream.Dispose();
+    }
+}
+```
+
+No finalizer needed because `FileStream` already knows how to clean up its unmanaged resources.
+
+---
+
+### Q6. Can we have a Finalizer without IDisposable?
+
+Technically yes:
+
+```csharp
+class Test
+{
+    ~Test()
+    {
+        Console.WriteLine("Cleanup");
+    }
+}
+```
+
+But it's generally discouraged because consumers of your class have no way to release resources promptly.
+
+---
+
+# Interview Answer (5+ Years)
+
+**Interviewer:** *"Explain the difference between `IDisposable` and a finalizer."*
+
+A strong answer is:
+
+> "`IDisposable` provides deterministic cleanup of resources. When `Dispose()` is called—typically through a `using` statement—unmanaged resources such as database connections or file handles are released immediately. A finalizer, on the other hand, is executed by the Garbage Collector at an unpredictable time before reclaiming an object that has a finalizer. Because finalizers delay object reclamation and add overhead, they should only be implemented when a class directly owns unmanaged resources. In modern .NET, the recommended approach is to implement `IDisposable`, use `SafeHandle` for unmanaged handles where possible, and call `GC.SuppressFinalize(this)` after successful disposal to avoid unnecessary finalization.`
