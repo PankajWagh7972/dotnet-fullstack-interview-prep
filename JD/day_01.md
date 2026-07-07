@@ -5088,3 +5088,763 @@ But it's generally discouraged because consumers of your class have no way to re
 A strong answer is:
 
 > "`IDisposable` provides deterministic cleanup of resources. When `Dispose()` is called—typically through a `using` statement—unmanaged resources such as database connections or file handles are released immediately. A finalizer, on the other hand, is executed by the Garbage Collector at an unpredictable time before reclaiming an object that has a finalizer. Because finalizers delay object reclamation and add overhead, they should only be implemented when a class directly owns unmanaged resources. In modern .NET, the recommended approach is to implement `IDisposable`, use `SafeHandle` for unmanaged handles where possible, and call `GC.SuppressFinalize(this)` after successful disposal to avoid unnecessary finalization.`
+
+Great! We've completed:
+
+* ✅ OOP
+* ✅ SOLID
+* ✅ Dependency Injection
+* ✅ Async/Await
+* ✅ Memory Management & GC
+
+Now let's move to another **extremely important C# topic** that interviewers ask after DI and async.
+
+# Day 1 – Part 6: Delegates, Events, Func, Action & Expression Trees
+
+> **Interview Importance: ⭐⭐⭐⭐⭐**
+
+This topic is important because it forms the foundation for:
+
+* LINQ
+* Lambda Expressions
+* ASP.NET Core Middleware
+* Entity Framework Core
+* Event Handling
+* Callbacks
+* Dependency Injection internals
+
+Most developers know how to *use* delegates but not **how they work internally**.
+
+---
+
+# What is a Delegate?
+
+## Definition
+
+A **delegate** is a **type-safe function pointer**.
+
+If you're coming from C/C++, a function pointer can point to any function with a matching signature, but it isn't type-safe.
+
+A delegate in C#:
+
+* References methods.
+* Enforces matching signatures.
+* Can be passed as a parameter.
+* Can be returned from methods.
+
+Think of it as a variable that stores a method.
+
+---
+
+## Normal Method Call
+
+```csharp
+public class Calculator
+{
+    public int Add(int x, int y)
+    {
+        return x + y;
+    }
+}
+
+var calculator = new Calculator();
+int result = calculator.Add(10, 20);
+```
+
+Here you call the method directly.
+
+---
+
+## Using a Delegate
+
+```csharp
+public delegate int Calculate(int x, int y);
+```
+
+Now assign a method:
+
+```csharp
+Calculator calculator = new Calculator();
+
+Calculate operation = calculator.Add;
+
+int result = operation(10, 20);
+```
+
+Notice:
+
+```text
+operation
+
+↓
+
+Add()
+```
+
+The delegate holds a reference to the method.
+
+---
+
+# What Happens Internally?
+
+Consider:
+
+```csharp
+Calculate operation = calculator.Add;
+```
+
+The CLR creates a delegate object containing:
+
+```text
+Delegate Object
+
+Method Pointer
+
+↓
+
+Add()
+
+Target Object
+
+↓
+
+calculator
+```
+
+When you execute:
+
+```csharp
+operation(10, 20);
+```
+
+The delegate internally calls:
+
+```csharp
+calculator.Add(10,20);
+```
+
+---
+
+# Why Do We Need Delegates?
+
+Suppose we have two sorting algorithms:
+
+```csharp
+SortByName()
+
+SortBySalary()
+```
+
+Instead of writing:
+
+```csharp
+SortByName();
+
+SortBySalary();
+```
+
+We can pass the sorting method.
+
+```csharp
+Sort(employeeList, SortBySalary);
+```
+
+Now the sorting logic is reusable.
+
+This is known as a **callback**.
+
+---
+
+# Delegate Syntax
+
+```csharp
+public delegate int Calculate(int a, int b);
+```
+
+Signature
+
+```text
+Return Type
+
+↓
+
+int
+
+Name
+
+↓
+
+Calculate
+
+Parameters
+
+↓
+
+(int,int)
+```
+
+Only methods with the same signature can be assigned.
+
+---
+
+Example
+
+```csharp
+public int Add(int a, int b)
+{
+    return a + b;
+}
+
+public int Multiply(int a, int b)
+{
+    return a * b;
+}
+```
+
+Both work:
+
+```csharp
+Calculate operation = Add;
+
+operation = Multiply;
+```
+
+---
+
+# Multicast Delegates
+
+One of the most common interview questions.
+
+A delegate can reference **multiple methods**.
+
+```csharp
+public delegate void Notify();
+```
+
+```csharp
+Notify notification = SendEmail;
+
+notification += SendSMS;
+
+notification += SendPushNotification;
+```
+
+Memory
+
+```text
+Delegate
+
+↓
+
+Email()
+
+↓
+
+SMS()
+
+↓
+
+Push()
+```
+
+Calling:
+
+```csharp
+notification();
+```
+
+Executes:
+
+```text
+SendEmail()
+
+↓
+
+SendSMS()
+
+↓
+
+SendPushNotification()
+```
+
+All in sequence.
+
+---
+
+# Removing Methods
+
+```csharp
+notification -= SendSMS;
+```
+
+Now only:
+
+```text
+Email
+
+↓
+
+Push
+```
+
+remain.
+
+---
+
+# Interview Question
+
+### What happens if one method throws an exception?
+
+Suppose:
+
+```text
+Email()
+
+↓
+
+SMS()
+
+↓
+
+Push()
+```
+
+If `SMS()` throws an exception:
+
+```text
+Email ✔
+
+↓
+
+SMS ❌
+
+↓
+
+Push (Not Executed)
+```
+
+The remaining methods are not called unless you invoke them individually via the delegate's invocation list and handle exceptions yourself.
+
+---
+
+# Anonymous Methods
+
+Before lambda expressions, C# introduced anonymous methods.
+
+```csharp
+Calculate operation = delegate(int a, int b)
+{
+    return a + b;
+};
+```
+
+Works,
+
+but it's verbose.
+
+---
+
+# Lambda Expressions
+
+Equivalent:
+
+```csharp
+Calculate operation = (a, b) => a + b;
+```
+
+This is what we use today.
+
+---
+
+# Built-in Delegates
+
+Instead of declaring:
+
+```csharp
+public delegate void Print(string name);
+```
+
+Microsoft provides built-in generic delegates.
+
+---
+
+# Action
+
+Represents a method that returns **void**.
+
+```csharp
+Action<string> print = Console.WriteLine;
+
+print("Hello");
+```
+
+Equivalent to:
+
+```csharp
+public delegate void Action(string value);
+```
+
+---
+
+# Func
+
+Represents a method that returns a value.
+
+```csharp
+Func<int, int, int> add = (a, b) => a + b;
+```
+
+The last generic type is always the return type.
+
+```text
+Func<int,int,int>
+
+↓
+
+Input
+
+↓
+
+Input
+
+↓
+
+Return
+```
+
+---
+
+# Predicate
+
+Represents a method returning `bool`.
+
+```csharp
+Predicate<int> isEven = number => number % 2 == 0;
+```
+
+Used frequently with collections.
+
+---
+
+# Action vs Func vs Predicate
+
+| Type      | Returns |
+| --------- | ------- |
+| Action    | void    |
+| Func      | Value   |
+| Predicate | bool    |
+
+---
+
+# Delegates in LINQ
+
+Example:
+
+```csharp
+employees.Where(e => e.Age > 30);
+```
+
+The lambda:
+
+```csharp
+e => e.Age > 30
+```
+
+is converted to a delegate (or an expression tree, depending on the API).
+
+Conceptually:
+
+```csharp
+Func<Employee, bool> filter = e => e.Age > 30;
+```
+
+---
+
+# What are Events?
+
+An event is built on top of delegates.
+
+It provides a controlled publish/subscribe mechanism.
+
+Example:
+
+Button click.
+
+```text
+Button
+
+↓
+
+Click Event
+
+↓
+
+Subscriber 1
+
+↓
+
+Subscriber 2
+```
+
+---
+
+# Event Example
+
+```csharp
+public delegate void Notify();
+```
+
+```csharp
+public class OrderService
+{
+    public event Notify OrderPlaced;
+}
+```
+
+Subscriber
+
+```csharp
+order.OrderPlaced += SendEmail;
+```
+
+Publisher
+
+```csharp
+OrderPlaced?.Invoke();
+```
+
+---
+
+# Why Not Use Delegates Directly?
+
+Suppose:
+
+```csharp
+public Notify Notification;
+```
+
+Anyone could write:
+
+```csharp
+notification = null;
+```
+
+or
+
+```csharp
+notification();
+```
+
+from outside the class.
+
+Events prevent that.
+
+Outside code can:
+
+* Subscribe (`+=`)
+* Unsubscribe (`-=`)
+
+Only the declaring class can raise the event.
+
+---
+
+# Delegate vs Event
+
+| Delegate                               | Event                                     |
+| -------------------------------------- | ----------------------------------------- |
+| General-purpose callback               | Publish/subscribe notification            |
+| Can be invoked by any code with access | Can only be raised by the declaring class |
+| Can be reassigned                      | External code cannot overwrite it         |
+
+---
+
+# Expression Trees
+
+This is where many experienced interviews become more advanced.
+
+Suppose:
+
+```csharp
+Func<Employee, bool> filter = e => e.Age > 30;
+```
+
+The compiler creates executable IL.
+
+But:
+
+```csharp
+Expression<Func<Employee, bool>> filter = e => e.Age > 30;
+```
+
+creates a **data structure** representing the code.
+
+Think of it as:
+
+```text
+Age
+
+>
+
+30
+```
+
+instead of compiled instructions.
+
+---
+
+# Why Does EF Core Use Expression Trees?
+
+Example:
+
+```csharp
+_context.Employees
+    .Where(e => e.Age > 30)
+```
+
+If EF Core received a normal delegate:
+
+```csharp
+Func<Employee,bool>
+```
+
+it would only know how to execute it in memory.
+
+It wouldn't know how to translate it into SQL.
+
+With an expression tree:
+
+```text
+Age
+
+>
+
+30
+```
+
+EF Core can produce:
+
+```sql
+SELECT *
+FROM Employees
+WHERE Age > 30
+```
+
+This is one of the key reasons `IQueryable<T>` works.
+
+---
+
+# Interview Questions
+
+## Q1. What is the difference between a Delegate and an Interface?
+
+**Delegate**
+
+* Represents a method.
+* Good for callbacks.
+* Behavior is passed as data.
+
+**Interface**
+
+* Represents a contract implemented by classes.
+* Suitable when an object has state and multiple related behaviors.
+
+---
+
+## Q2. Why are delegates called type-safe?
+
+Because only methods with the same signature can be assigned.
+
+Example:
+
+```csharp
+public delegate int Calculate(int a, int b);
+```
+
+This is allowed:
+
+```csharp
+int Add(int a, int b)
+```
+
+This is not:
+
+```csharp
+string Add(int a, int b)
+```
+
+---
+
+## Q3. Why are events safer than delegates?
+
+Events prevent external code from invoking or replacing the delegate.
+
+They expose only subscription and unsubscription.
+
+---
+
+## Q4. What is the difference between `Func` and `Expression<Func<>>`?
+
+| Func                    | Expression<Func<>>                 |
+| ----------------------- | ---------------------------------- |
+| Executable code         | Representation of code             |
+| Runs in memory          | Can be inspected and translated    |
+| Used by LINQ to Objects | Used by EF Core and LINQ providers |
+
+---
+
+## Q5. Why does EF Core use `Expression<Func<T,bool>>` instead of `Func<T,bool>`?
+
+Because EF Core must translate the predicate into SQL.
+
+A `Func<T,bool>` is compiled code that cannot be converted into SQL.
+
+An expression tree describes the structure of the lambda, allowing EF Core to generate database queries.
+
+---
+
+# Real Project Example
+
+Imagine your application supports multiple notification channels after a loan application is approved.
+
+Instead of writing:
+
+```csharp
+SendEmail();
+SendSms();
+SendTeamsMessage();
+```
+
+you can expose an event:
+
+```csharp
+public event EventHandler<LoanApprovedEventArgs> LoanApproved;
+```
+
+Different components subscribe independently:
+
+* Email service
+* SMS service
+* Audit logger
+* Analytics service
+
+The loan service doesn't know who is listening—it simply raises the event. This creates a loosely coupled design.
+
+---
+
+## Next Topic
+
+The next major topic is **LINQ (Language Integrated Query)**.
+
+We'll cover it in interview depth, including:
+
+* Deferred vs Immediate Execution
+* `IEnumerable` vs `IQueryable`
+* How LINQ works internally
+* LINQ performance pitfalls
+* GroupBy, Join, SelectMany
+* `Any()` vs `Count()`
+* `First()` vs `Single()`
+* LINQ in EF Core vs LINQ to Objects
+* SQL translation
+* Most common 5+ years interview questions
+
