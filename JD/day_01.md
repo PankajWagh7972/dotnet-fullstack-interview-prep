@@ -1389,3 +1389,724 @@ A strong answer is:
 
 This answer demonstrates that you understand not just the concepts, but also how they influence maintainable application architecture.
 
+Great. Now we'll move to the **second most important topic after OOP**.
+
+# Day 1 – Part 2: SOLID Principles
+
+> **Interview Importance: ⭐⭐⭐⭐⭐ (Very High)**
+
+For **5+ years of experience**, almost every .NET interview includes SOLID principles. Don't just memorize definitions—understand the problems each principle solves.
+
+---
+
+# What is SOLID?
+
+SOLID is a set of **five object-oriented design principles** that help build software that is:
+
+* Easy to maintain
+* Easy to extend
+* Easy to test
+* Loosely coupled
+* Less prone to bugs
+
+SOLID stands for:
+
+| Letter | Principle                       |
+| ------ | ------------------------------- |
+| S      | Single Responsibility Principle |
+| O      | Open/Closed Principle           |
+| L      | Liskov Substitution Principle   |
+| I      | Interface Segregation Principle |
+| D      | Dependency Inversion Principle  |
+
+---
+
+# 1. Single Responsibility Principle (SRP)
+
+## Definition
+
+> **A class should have only one reason to change.**
+
+This doesn't mean a class should have only one method.
+
+It means a class should have **one responsibility**.
+
+---
+
+## Bad Example
+
+Suppose we have an OrderService.
+
+```csharp
+public class OrderService
+{
+    public void SaveOrder()
+    {
+        // Save to database
+    }
+
+    public void SendEmail()
+    {
+        // Send confirmation email
+    }
+
+    public void GenerateInvoice()
+    {
+        // Create PDF invoice
+    }
+}
+```
+
+### What's wrong?
+
+This class has **three responsibilities**:
+
+* Database operations
+* Email sending
+* Invoice generation
+
+If tomorrow:
+
+* Email logic changes
+* Invoice format changes
+* Database changes
+
+All require modifying the same class.
+
+This violates SRP.
+
+---
+
+## Good Design
+
+Separate responsibilities.
+
+```csharp
+public class OrderService
+{
+    public void SaveOrder()
+    {
+    }
+}
+```
+
+```csharp
+public class EmailService
+{
+    public void SendEmail()
+    {
+    }
+}
+```
+
+```csharp
+public class InvoiceService
+{
+    public void GenerateInvoice()
+    {
+    }
+}
+```
+
+Each class now has **one responsibility**.
+
+---
+
+## Real Project Example
+
+Imagine your Student Management System.
+
+Instead of:
+
+```text
+StudentService
+
+Save Student
+
+Delete Student
+
+Generate Excel
+
+Send Email
+
+Upload Photo
+
+Create PDF
+```
+
+Split it into:
+
+```text
+StudentService
+
+StudentReportService
+
+StudentEmailService
+
+StudentPhotoService
+```
+
+Much cleaner.
+
+---
+
+## Benefits
+
+* Easier testing
+* Easier maintenance
+* Easier debugging
+* Less merge conflicts
+* Better code organization
+
+---
+
+## Interview Question
+
+### Q: Is having one responsibility the same as having one method?
+
+**Answer:**
+
+No.
+
+A class can have many methods.
+
+Those methods should all contribute to **one responsibility**.
+
+Example
+
+```csharp
+public class StudentService
+{
+    public void AddStudent()
+    {
+    }
+
+    public void UpdateStudent()
+    {
+    }
+
+    public void DeleteStudent()
+    {
+    }
+}
+```
+
+All methods relate to **student management**, so SRP is not violated.
+
+---
+
+# 2. Open/Closed Principle (OCP)
+
+## Definition
+
+> **Software entities should be open for extension but closed for modification.**
+
+Meaning:
+
+You should be able to add new functionality **without modifying existing code**.
+
+---
+
+## Bad Example
+
+```csharp
+public class DiscountService
+{
+    public decimal Calculate(string customerType)
+    {
+        if(customerType=="Regular")
+            return 10;
+
+        if(customerType=="Premium")
+            return 20;
+
+        if(customerType=="VIP")
+            return 30;
+
+        return 0;
+    }
+}
+```
+
+Tomorrow a new customer type:
+
+```
+Gold
+```
+
+Now you modify this class again.
+
+Next month
+
+```
+Diamond
+```
+
+Modify again.
+
+This violates OCP.
+
+---
+
+## Good Example
+
+Create an abstraction.
+
+```csharp
+public interface IDiscount
+{
+    decimal Calculate();
+}
+```
+
+Regular
+
+```csharp
+public class RegularDiscount : IDiscount
+{
+    public decimal Calculate()
+    {
+        return 10;
+    }
+}
+```
+
+Premium
+
+```csharp
+public class PremiumDiscount : IDiscount
+{
+    public decimal Calculate()
+    {
+        return 20;
+    }
+}
+```
+
+Now,
+
+adding
+
+```
+GoldDiscount
+```
+
+requires **creating a new class**, not changing existing ones.
+
+---
+
+## Real Project Example
+
+Notification System
+
+Instead of
+
+```text
+if(email)
+
+if(sms)
+
+if(push)
+
+if(whatsapp)
+```
+
+Create
+
+```
+INotificationSender
+```
+
+Implement
+
+```
+EmailSender
+
+SmsSender
+
+PushSender
+
+WhatsappSender
+```
+
+No existing code changes.
+
+---
+
+## Benefits
+
+* Safer changes
+* Easier to extend
+* Lower risk of introducing bugs
+* Supports plugin-like architectures
+
+---
+
+# 3. Liskov Substitution Principle (LSP)
+
+This is one of the most misunderstood principles.
+
+## Definition
+
+> **Derived classes should be replaceable with their base class without changing the correctness of the program.**
+
+Simply:
+
+If `Dog` inherits `Animal`, then anywhere an `Animal` is expected, a `Dog` should work correctly.
+
+---
+
+## Bad Example
+
+```csharp
+public class Bird
+{
+    public virtual void Fly()
+    {
+    }
+}
+```
+
+```csharp
+public class Penguin : Bird
+{
+    public override void Fly()
+    {
+        throw new Exception();
+    }
+}
+```
+
+Problem:
+
+Penguins can't fly.
+
+So `Penguin` is not a proper substitute for `Bird`.
+
+This violates LSP.
+
+---
+
+## Better Design
+
+Separate behaviors.
+
+```text
+Animal
+
+FlyingBird
+
+NonFlyingBird
+```
+
+or
+
+```
+IFlyable
+```
+
+Only birds that fly implement `IFlyable`.
+
+---
+
+## Another Example
+
+```csharp
+Rectangle
+
+Square
+```
+
+This classic example often breaks because changing width and height independently doesn't make sense for a square.
+
+---
+
+## Interview Tip
+
+LSP is about **behavior**, not inheritance syntax.
+
+---
+
+# 4. Interface Segregation Principle (ISP)
+
+## Definition
+
+> **Clients should not be forced to depend on interfaces they do not use.**
+
+---
+
+## Bad Example
+
+```csharp
+public interface IWorker
+{
+    void Work();
+
+    void Eat();
+
+    void Sleep();
+}
+```
+
+Robot
+
+```csharp
+public class Robot : IWorker
+{
+    public void Work()
+    {
+    }
+
+    public void Eat()
+    {
+        throw new NotImplementedException();
+    }
+
+    public void Sleep()
+    {
+        throw new NotImplementedException();
+    }
+}
+```
+
+Robot doesn't eat or sleep.
+
+Bad design.
+
+---
+
+## Good Example
+
+Split interfaces.
+
+```csharp
+public interface IWork
+{
+    void Work();
+}
+```
+
+```csharp
+public interface IEat
+{
+    void Eat();
+}
+```
+
+```csharp
+public interface ISleep
+{
+    void Sleep();
+}
+```
+
+Robot only implements
+
+```text
+IWork
+```
+
+Perfect.
+
+---
+
+## Real Project Example
+
+Don't create
+
+```text
+IUserService
+
+CreateUser()
+
+DeleteUser()
+
+SendEmail()
+
+ExportExcel()
+
+UploadImage()
+
+GenerateReport()
+```
+
+Instead
+
+```
+IUserService
+
+IReportService
+
+IEmailService
+
+IFileService
+```
+
+Much cleaner.
+
+---
+
+# 5. Dependency Inversion Principle (DIP)
+
+This is the backbone of Dependency Injection.
+
+## Definition
+
+> **High-level modules should not depend on low-level modules. Both should depend on abstractions.**
+
+---
+
+## Bad Example
+
+```csharp
+public class OrderService
+{
+    private readonly EmailService _emailService =
+        new EmailService();
+}
+```
+
+Problem:
+
+OrderService depends directly on EmailService.
+
+Hard to test.
+
+Hard to replace.
+
+---
+
+## Good Example
+
+```csharp
+public interface IEmailService
+{
+    void Send();
+}
+```
+
+Implementation
+
+```csharp
+public class EmailService : IEmailService
+{
+    public void Send()
+    {
+    }
+}
+```
+
+Consumer
+
+```csharp
+public class OrderService
+{
+    private readonly IEmailService _emailService;
+
+    public OrderService(IEmailService emailService)
+    {
+        _emailService = emailService;
+    }
+}
+```
+
+Now,
+
+DI injects
+
+```text
+EmailService
+```
+
+or
+
+```text
+MockEmailService
+```
+
+or
+
+```text
+SendGridEmailService
+```
+
+No code changes.
+
+---
+
+# Interview Questions
+
+### Q1. Which SOLID principle is used the most in .NET Core?
+
+**Answer:**
+
+Dependency Inversion Principle (DIP).
+
+ASP.NET Core's built-in Dependency Injection container is based on DIP.
+
+---
+
+### Q2. Which SOLID principle improves testability the most?
+
+**Answer:**
+
+Dependency Inversion Principle.
+
+Because dependencies can be mocked.
+
+---
+
+### Q3. Which principle prevents "God Classes"?
+
+**Answer:**
+
+Single Responsibility Principle.
+
+---
+
+### Q4. Which principle says we shouldn't modify existing code?
+
+**Answer:**
+
+Open/Closed Principle.
+
+---
+
+### Q5. What is the difference between DIP and DI?
+
+This is asked **very frequently**.
+
+| DIP                           | DI                                          |
+| ----------------------------- | ------------------------------------------- |
+| A design principle            | A design pattern / implementation technique |
+| Says "depend on abstractions" | Injects those abstractions into classes     |
+| Concept                       | Mechanism                                   |
+
+**Example Answer:**
+
+> Dependency Inversion Principle is a design principle that says high-level modules should depend on abstractions instead of concrete implementations. Dependency Injection is the technique used to provide those abstractions to a class, typically through constructor injection in ASP.NET Core.
+
+---
+
+# How to Answer in an Interview
+
+If asked:
+
+**"Which SOLID principle have you used in your projects?"**
+
+A strong answer would be:
+
+> "I've applied all five principles to varying degrees. The ones I use most frequently are SRP by separating business logic into focused services, OCP by extending functionality through interfaces instead of modifying existing classes, and DIP by using constructor-based dependency injection throughout ASP.NET Core applications. These practices have made the applications easier to test, maintain, and extend."
+
+---
+
+## Next Topic
+
+The next topic is **Dependency Injection (DI)**. We'll go much deeper than just `AddScoped`, `AddSingleton`, and `AddTransient`. We'll cover:
+
+* What happens internally when ASP.NET Core resolves dependencies.
+* Constructor vs Property vs Method Injection.
+* Service lifetimes (`Transient`, `Scoped`, `Singleton`) with real-world scenarios.
+* Common mistakes (like injecting a Scoped service into a Singleton).
+* How the built-in DI container works behind the scenes.
+* The most frequently asked DI interview questions for 5+ years of experience.
