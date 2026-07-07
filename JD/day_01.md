@@ -6745,3 +6745,1587 @@ The next major C# topic for Day 1 is **Generics**, where we'll cover:
 * How generics differ from `object`
 * How the CLR implements generics internally
 * Common senior-level interview questions and real-world use cases
+
+Excellent. This is one of the **favorite topics in backend interviews** because it tests whether you understand **how C# achieves type safety, performance, and reusable code**.
+
+For **5+ years of experience**, interviewers often go beyond syntax and ask about **CLR internals, constraints, covariance/contravariance, and why generics are faster than using `object`.**
+
+---
+
+# Day 1 – Part 8: Generics (Deep Dive)
+
+> **Interview Importance: ⭐⭐⭐⭐⭐**
+
+---
+
+# What are Generics?
+
+A **generic** allows you to write code that works with **any data type** while maintaining **compile-time type safety**.
+
+Instead of writing separate classes for every type:
+
+```csharp
+EmployeeRepository
+
+ProductRepository
+
+CustomerRepository
+```
+
+You write one generic class:
+
+```csharp
+Repository<T>
+```
+
+where `T` is a placeholder for the actual type.
+
+---
+
+# Why were Generics introduced?
+
+Imagine there were no generics.
+
+You might write:
+
+```csharp
+public class DataStore
+{
+    public object Value { get; set; }
+}
+```
+
+Usage:
+
+```csharp
+DataStore store = new DataStore();
+
+store.Value = 100;
+```
+
+Later:
+
+```csharp
+int number = (int)store.Value;
+```
+
+Problems:
+
+* Explicit casting required
+* Runtime errors if the wrong type is stored
+* Boxing/unboxing for value types
+
+Example:
+
+```csharp
+store.Value = "Hello";
+
+int number = (int)store.Value;
+```
+
+Result:
+
+```text
+InvalidCastException
+```
+
+---
+
+# Generics Solve This
+
+```csharp
+public class DataStore<T>
+{
+    public T Value { get; set; }
+}
+```
+
+Usage:
+
+```csharp
+DataStore<int> store = new();
+
+store.Value = 100;
+```
+
+Now:
+
+* No casting
+* Compile-time checking
+* Better performance
+
+---
+
+# Generic Class
+
+Example:
+
+```csharp
+public class Repository<T>
+{
+    public void Add(T entity)
+    {
+    }
+
+    public T Get()
+    {
+        return default!;
+    }
+}
+```
+
+Usage:
+
+```csharp
+Repository<Employee> employeeRepository = new();
+
+Repository<Product> productRepository = new();
+```
+
+One class supports many types.
+
+---
+
+# Generic Method
+
+Instead of:
+
+```csharp
+public int Get(int value)
+{
+    return value;
+}
+```
+
+and
+
+```csharp
+public string Get(string value)
+{
+    return value;
+}
+```
+
+Use:
+
+```csharp
+public T Get<T>(T value)
+{
+    return value;
+}
+```
+
+Usage:
+
+```csharp
+Get(10);
+
+Get("Hello");
+
+Get(true);
+```
+
+The compiler infers the type automatically.
+
+---
+
+# Generic Interface
+
+Example:
+
+```csharp
+public interface IRepository<T>
+{
+    void Add(T entity);
+
+    T GetById(int id);
+}
+```
+
+Implementation:
+
+```csharp
+public class EmployeeRepository : IRepository<Employee>
+{
+}
+```
+
+This pattern is extremely common in ASP.NET Core applications.
+
+---
+
+# How Does the Compiler Know the Type?
+
+Suppose:
+
+```csharp
+Repository<Employee> repository = new();
+```
+
+Internally:
+
+```text
+T
+
+↓
+
+Employee
+```
+
+Every occurrence of `T` becomes `Employee` for that constructed type.
+
+---
+
+# Generic Constraints
+
+Sometimes you don't want **every** type.
+
+Example:
+
+```csharp
+public class Repository<T>
+{
+}
+```
+
+Allows:
+
+```csharp
+Repository<int>
+
+Repository<string>
+
+Repository<Employee>
+```
+
+What if you only want classes?
+
+---
+
+## `where T : class`
+
+```csharp
+public class Repository<T>
+    where T : class
+{
+}
+```
+
+Now:
+
+Allowed:
+
+```csharp
+Repository<Employee>
+```
+
+Not allowed:
+
+```csharp
+Repository<int>
+```
+
+---
+
+## `where T : struct`
+
+Only value types.
+
+```csharp
+public class Calculator<T>
+    where T : struct
+{
+}
+```
+
+Allowed:
+
+```csharp
+Calculator<int>
+
+Calculator<double>
+```
+
+Not:
+
+```csharp
+Calculator<Employee>
+```
+
+---
+
+## `where T : new()`
+
+Requires a public parameterless constructor.
+
+```csharp
+public class Factory<T>
+    where T : new()
+{
+    public T Create()
+    {
+        return new T();
+    }
+}
+```
+
+Without the constraint:
+
+```csharp
+new T();
+```
+
+won't compile.
+
+---
+
+## `where T : BaseClass`
+
+```csharp
+public class Repository<T>
+    where T : BaseEntity
+{
+}
+```
+
+Now every `T` is guaranteed to inherit from `BaseEntity`.
+
+Example:
+
+```csharp
+public class Employee : BaseEntity
+{
+}
+```
+
+Now this works:
+
+```csharp
+entity.Id
+```
+
+because every `T` has an `Id`.
+
+---
+
+## Interface Constraint
+
+```csharp
+public class Logger<T>
+    where T : ILogger
+{
+}
+```
+
+Now every type implements `ILogger`.
+
+---
+
+## Multiple Constraints
+
+```csharp
+public class Repository<T>
+where T : BaseEntity, IDisposable, new()
+{
+}
+```
+
+Meaning:
+
+* Inherits `BaseEntity`
+* Implements `IDisposable`
+* Has a parameterless constructor
+
+---
+
+# Why Are Generics Faster Than object?
+
+Suppose:
+
+```csharp
+List<object> numbers = new();
+
+numbers.Add(10);
+```
+
+What happens?
+
+`10` is an `int`.
+
+`object` is a reference type.
+
+The runtime performs:
+
+```text
+int
+
+↓
+
+Boxing
+
+↓
+
+Heap Allocation
+```
+
+Later:
+
+```csharp
+int number = (int)numbers[0];
+```
+
+The runtime performs:
+
+```text
+Heap
+
+↓
+
+Unboxing
+
+↓
+
+int
+```
+
+Extra work.
+
+---
+
+Using Generics:
+
+```csharp
+List<int> numbers = new();
+```
+
+No boxing.
+
+No unboxing.
+
+Better performance.
+
+---
+
+# Generic Collections
+
+Instead of:
+
+```csharp
+ArrayList list = new();
+
+list.Add(10);
+
+list.Add("Hello");
+```
+
+Anything can be added.
+
+Problems:
+
+* Casting
+* Runtime errors
+* Boxing
+
+Modern C# uses:
+
+```csharp
+List<int>
+```
+
+or
+
+```csharp
+Dictionary<string, Employee>
+```
+
+Everything is strongly typed.
+
+---
+
+# CLR Internals (Interview Favorite)
+
+**Interviewer:**
+
+> "How are Generics implemented internally?"
+
+There are two important cases.
+
+---
+
+## Value Types
+
+Example:
+
+```csharp
+List<int>
+
+List<double>
+```
+
+The CLR generates specialized native code for each value type.
+
+Conceptually:
+
+```text
+List<int>
+
+↓
+
+Machine Code A
+
+----------------
+
+List<double>
+
+↓
+
+Machine Code B
+```
+
+This avoids boxing and gives better performance.
+
+---
+
+## Reference Types
+
+Example:
+
+```csharp
+List<Employee>
+
+List<Customer>
+```
+
+The CLR shares the same generic implementation because both store references.
+
+Conceptually:
+
+```text
+List<Employee>
+
+↓
+
+Shared Generic Code
+
+↑
+
+List<Customer>
+```
+
+This reduces memory usage.
+
+---
+
+# Covariance and Contravariance
+
+This is a common senior-level interview topic.
+
+---
+
+## Covariance (`out`)
+
+Allows using a **more derived type** where a base type is expected.
+
+Example:
+
+```csharp
+IEnumerable<Employee> employees = new List<Employee>();
+
+IEnumerable<Person> people = employees;
+```
+
+This works because `IEnumerable<out T>` is covariant.
+
+You can read `Person` objects from it safely.
+
+---
+
+## Contravariance (`in`)
+
+Allows using a **less derived type** where a more derived type is expected.
+
+Example:
+
+```csharp
+Action<Person> action = PrintPerson;
+
+Action<Employee> employeeAction = action;
+```
+
+Since every `Employee` is a `Person`, passing an `Employee` to a method that accepts `Person` is safe.
+
+---
+
+# Why Doesn't List<T> Support Covariance?
+
+Suppose:
+
+```csharp
+List<Employee> employees = new();
+
+List<Person> people = employees;
+```
+
+If this were allowed:
+
+```csharp
+people.Add(new Customer());
+```
+
+Now the original `List<Employee>` contains a `Customer`.
+
+That would break type safety.
+
+So `List<T>` is **invariant**.
+
+---
+
+# Real Project Example
+
+A generic repository:
+
+```csharp
+public interface IRepository<T>
+{
+    Task<T?> GetByIdAsync(int id);
+
+    Task AddAsync(T entity);
+
+    Task DeleteAsync(T entity);
+}
+```
+
+Implementation:
+
+```csharp
+public class Repository<T> : IRepository<T>
+    where T : BaseEntity
+{
+    private readonly DbContext _context;
+
+    public Repository(DbContext context)
+    {
+        _context = context;
+    }
+
+    public async Task<T?> GetByIdAsync(int id)
+    {
+        return await _context.Set<T>().FindAsync(id);
+    }
+
+    public async Task AddAsync(T entity)
+    {
+        await _context.Set<T>().AddAsync(entity);
+    }
+
+    public Task DeleteAsync(T entity)
+    {
+        _context.Set<T>().Remove(entity);
+        return Task.CompletedTask;
+    }
+}
+```
+
+This eliminates duplicate repository code for each entity.
+
+---
+
+# Common Interview Questions
+
+### Q1. Why use Generics instead of `object`?
+
+**Answer:**
+
+* Compile-time type safety
+* No casting
+* Better IntelliSense
+* Better performance
+* No boxing/unboxing for value types
+
+---
+
+### Q2. What is the difference between Generics and method overloading?
+
+**Method Overloading**
+
+```csharp
+void Print(int value);
+
+void Print(string value);
+```
+
+Requires a separate method for each type.
+
+**Generics**
+
+```csharp
+void Print<T>(T value);
+```
+
+One method works for any type.
+
+---
+
+### Q3. Why is `new()` constraint needed?
+
+Because the compiler otherwise cannot guarantee that `T` has a parameterless constructor.
+
+Without:
+
+```csharp
+where T : new()
+```
+
+this won't compile:
+
+```csharp
+new T();
+```
+
+---
+
+### Q4. What is covariance?
+
+Allows assigning a more specific type to a less specific interface when the interface is read-only (for example, `IEnumerable<out T>`).
+
+---
+
+### Q5. What is contravariance?
+
+Allows assigning a less specific type to a more specific delegate parameter (for example, `Action<in T>`).
+
+---
+
+### Q6. Why is `List<T>` invariant?
+
+Because it supports both reading and writing. Allowing covariance would let incompatible types be inserted into the list.
+
+---
+
+# Interview Answer (5+ Years)
+
+**Interviewer:** *"Explain Generics and why they are important."*
+
+A strong answer would be:
+
+> "Generics allow us to write reusable, type-safe code without sacrificing performance. They eliminate explicit casting and avoid boxing/unboxing for value types. The CLR generates specialized implementations for value types while sharing implementations for reference types, balancing performance and memory usage. In enterprise applications, generics are heavily used in repositories, dependency injection, collections, LINQ, and asynchronous programming."
+
+---
+
+## Day 1 Status
+
+You have now covered the core C# topics expected in senior backend interviews:
+
+* ✅ OOP & SOLID
+* ✅ Dependency Injection
+* ✅ Async/Await & Tasks
+* ✅ Memory Management & Garbage Collection
+* ✅ `IDisposable` & Finalizers
+* ✅ Delegates, Events, `Func`, `Action`, Expression Trees
+* ✅ LINQ
+* ✅ Generics
+
+### Next Topic
+
+The next logical topic is **Exception Handling & Logging**, where we'll cover:
+
+* CLR exception handling internals
+* `throw` vs `throw ex`
+* Custom exceptions
+* Global exception handling in ASP.NET Core
+* Exception filters and middleware
+* Best practices for production APIs
+* Logging with `ILogger`
+* Structured logging and correlation IDs
+* Common senior-level interview questions and real-world scenarios
+
+
+Excellent. This is one of the **most important ASP.NET Core interview topics**. Almost every 5+ year interview asks about **Exception Handling**, **Global Exception Middleware**, and **Logging** because these are essential for production-ready APIs.
+
+---
+
+# Day 1 – Part 9: Exception Handling & Logging (Deep Dive)
+
+> **Interview Importance: ⭐⭐⭐⭐⭐**
+
+---
+
+# What is an Exception?
+
+An exception is an object that represents an error occurring during program execution.
+
+Example:
+
+```csharp
+int x = 10;
+int y = 0;
+
+int result = x / y;
+```
+
+Runtime:
+
+```
+DivideByZeroException
+```
+
+Instead of crashing immediately, the CLR creates an exception object and begins searching for a handler.
+
+---
+
+# Exception Hierarchy
+
+All exceptions inherit from:
+
+```text
+System.Object
+      │
+System.Exception
+      │
+------------------------------------
+│        │         │               │
+IOException
+SqlException
+NullReferenceException
+InvalidOperationException
+```
+
+Because all exceptions inherit from `Exception`, you can catch them using:
+
+```csharp
+catch(Exception ex)
+{
+}
+```
+
+However, catch more specific exceptions whenever possible.
+
+---
+
+# How Exceptions Work Internally
+
+Example:
+
+```csharp
+public void MethodA()
+{
+    MethodB();
+}
+
+public void MethodB()
+{
+    MethodC();
+}
+
+public void MethodC()
+{
+    throw new Exception("Something went wrong");
+}
+```
+
+Call stack:
+
+```
+Main()
+
+↓
+
+MethodA()
+
+↓
+
+MethodB()
+
+↓
+
+MethodC()
+
+↓
+
+Exception
+```
+
+The CLR walks back up the call stack looking for a matching `catch`.
+
+```
+MethodC()
+
+↓
+
+MethodB()
+
+↓
+
+MethodA()
+
+↓
+
+Main()
+
+↓
+
+Found catch block
+```
+
+If no handler exists, the application (or request) fails.
+
+---
+
+# Basic Exception Handling
+
+```csharp
+try
+{
+    var result = 10 / 0;
+}
+catch (DivideByZeroException ex)
+{
+    Console.WriteLine(ex.Message);
+}
+finally
+{
+    Console.WriteLine("Always executes");
+}
+```
+
+Execution flow:
+
+```
+try
+
+↓
+
+Exception
+
+↓
+
+catch
+
+↓
+
+finally
+```
+
+---
+
+# Purpose of `finally`
+
+`finally` executes whether or not an exception occurs.
+
+Typical use cases:
+
+* Close files
+* Release locks
+* Cleanup resources
+
+Example:
+
+```csharp
+FileStream file = null;
+
+try
+{
+    file = File.OpenRead("test.txt");
+}
+finally
+{
+    file?.Dispose();
+}
+```
+
+Today we usually prefer:
+
+```csharp
+using var file = File.OpenRead("test.txt");
+```
+
+---
+
+# throw vs throw ex
+
+One of the most common interview questions.
+
+Wrong:
+
+```csharp
+catch(Exception ex)
+{
+    throw ex;
+}
+```
+
+Correct:
+
+```csharp
+catch(Exception)
+{
+    throw;
+}
+```
+
+---
+
+## Why?
+
+Suppose:
+
+```text
+Main
+
+↓
+
+Service
+
+↓
+
+Repository
+
+↓
+
+Exception
+```
+
+Using:
+
+```csharp
+throw;
+```
+
+Stack trace:
+
+```
+Repository
+
+↓
+
+Service
+
+↓
+
+Controller
+```
+
+Original location is preserved.
+
+Using:
+
+```csharp
+throw ex;
+```
+
+Stack trace starts from the rethrow point:
+
+```
+Service
+
+↓
+
+Controller
+```
+
+You lose the original source of the error, making debugging harder.
+
+**Rule:** If you're rethrowing the same exception, use `throw;`.
+
+---
+
+# Custom Exceptions
+
+Instead of:
+
+```csharp
+throw new Exception("Customer not found");
+```
+
+Create a meaningful exception:
+
+```csharp
+public class CustomerNotFoundException : Exception
+{
+    public CustomerNotFoundException(string message)
+        : base(message)
+    {
+    }
+}
+```
+
+Usage:
+
+```csharp
+throw new CustomerNotFoundException("Customer 101 not found");
+```
+
+Benefits:
+
+* Easier to catch specific business errors
+* Clearer intent
+* Better API responses
+
+---
+
+# Exception Filters
+
+Instead of:
+
+```csharp
+catch(SqlException ex)
+{
+    if(ex.Number == 1205)
+    {
+    }
+}
+```
+
+Use a filter:
+
+```csharp
+catch(SqlException ex) when (ex.Number == 1205)
+{
+}
+```
+
+The catch block runs only if the condition is true.
+
+---
+
+# Global Exception Handling in ASP.NET Core
+
+A production API should **not** wrap every action in `try/catch`.
+
+Bad:
+
+```csharp
+public IActionResult Get()
+{
+    try
+    {
+        ...
+    }
+    catch(Exception ex)
+    {
+        ...
+    }
+}
+```
+
+Every controller repeats the same code.
+
+Better approach:
+
+```
+Controller
+
+↓
+
+Service
+
+↓
+
+Repository
+
+↓
+
+Global Exception Middleware
+```
+
+Controllers stay clean.
+
+---
+
+# Exception Middleware
+
+Typical flow:
+
+```
+HTTP Request
+
+↓
+
+Authentication
+
+↓
+
+Authorization
+
+↓
+
+Controllers
+
+↓
+
+Exception?
+
+↓
+
+Exception Middleware
+
+↓
+
+JSON Response
+```
+
+Example:
+
+```csharp
+public class ExceptionMiddleware
+{
+    private readonly RequestDelegate _next;
+    private readonly ILogger<ExceptionMiddleware> _logger;
+
+    public ExceptionMiddleware(RequestDelegate next,
+                               ILogger<ExceptionMiddleware> logger)
+    {
+        _next = next;
+        _logger = logger;
+    }
+
+    public async Task Invoke(HttpContext context)
+    {
+        try
+        {
+            await _next(context);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unhandled exception");
+
+            context.Response.StatusCode = 500;
+
+            await context.Response.WriteAsJsonAsync(new
+            {
+                Message = "Something went wrong."
+            });
+        }
+    }
+}
+```
+
+Register:
+
+```csharp
+app.UseMiddleware<ExceptionMiddleware>();
+```
+
+---
+
+# Why Middleware Instead of try/catch?
+
+Advantages:
+
+* Single location
+* Consistent error responses
+* Easier logging
+* Easier maintenance
+* Cleaner controllers
+
+---
+
+# Logging
+
+Logging helps answer questions like:
+
+* What happened?
+* When did it happen?
+* Which user?
+* Which API?
+* What exception occurred?
+
+---
+
+# ILogger
+
+ASP.NET Core provides:
+
+```csharp
+ILogger<T>
+```
+
+Example:
+
+```csharp
+public class EmployeeService
+{
+    private readonly ILogger<EmployeeService> _logger;
+
+    public EmployeeService(
+        ILogger<EmployeeService> logger)
+    {
+        _logger = logger;
+    }
+}
+```
+
+---
+
+# Log Levels
+
+| Level       | Purpose                               |
+| ----------- | ------------------------------------- |
+| Trace       | Very detailed diagnostics             |
+| Debug       | Development troubleshooting           |
+| Information | Normal application events             |
+| Warning     | Unexpected but recoverable situations |
+| Error       | Operation failed                      |
+| Critical    | Application/system failure            |
+
+---
+
+Example:
+
+```csharp
+_logger.LogInformation("Employee created");
+```
+
+```csharp
+_logger.LogWarning("Retry attempt {RetryCount}", retryCount);
+```
+
+```csharp
+_logger.LogError(ex, "Database update failed");
+```
+
+---
+
+# Structured Logging
+
+Bad:
+
+```csharp
+_logger.LogInformation(
+    "Employee " + employeeId + " created");
+```
+
+Good:
+
+```csharp
+_logger.LogInformation(
+    "Employee {EmployeeId} created",
+    employeeId);
+```
+
+Why?
+
+Structured logging stores `EmployeeId` as a separate field, making it searchable in tools like Seq, Application Insights, or Elasticsearch.
+
+---
+
+# What Should You Log?
+
+Good candidates:
+
+* API start/end (if useful)
+* Validation failures
+* External API failures
+* Database failures
+* Retry attempts
+* Unexpected exceptions
+
+Avoid logging:
+
+* Passwords
+* Tokens
+* Credit card numbers
+* Sensitive personal information
+
+---
+
+# Correlation ID
+
+In microservices, one request may travel through several services.
+
+```
+Client
+
+↓
+
+API Gateway
+
+↓
+
+Order Service
+
+↓
+
+Payment Service
+
+↓
+
+Notification Service
+```
+
+Without a shared identifier, it's difficult to trace a request.
+
+A Correlation ID solves this.
+
+```
+Request
+
+↓
+
+CorrelationId
+
+↓
+
+Logged Everywhere
+```
+
+Now every log entry can be linked to the same request.
+
+---
+
+# Common Interview Questions
+
+### Q1. Difference between `throw` and `throw ex`?
+
+**Answer:**
+
+* `throw;` preserves the original stack trace.
+* `throw ex;` resets the stack trace to the current location.
+
+Always prefer `throw;` when rethrowing.
+
+---
+
+### Q2. Why shouldn't every controller use `try/catch`?
+
+Because it duplicates code and makes maintenance difficult.
+
+A global exception middleware centralizes error handling and provides consistent responses.
+
+---
+
+### Q3. When should you create a custom exception?
+
+When the exception represents a meaningful business scenario, such as:
+
+* CustomerNotFoundException
+* InsufficientBalanceException
+* LoanApprovalException
+
+Avoid creating custom exceptions for every possible error.
+
+---
+
+### Q4. What should be returned to API consumers?
+
+Avoid returning raw exception messages.
+
+Instead:
+
+```json
+{
+  "message": "An unexpected error occurred."
+}
+```
+
+Log the detailed exception internally.
+
+---
+
+### Q5. Why use structured logging?
+
+Because it stores log properties separately, enabling efficient filtering, searching, and analytics.
+
+---
+
+### Q6. Should exceptions be used for normal control flow?
+
+No.
+
+Example:
+
+Bad:
+
+```csharp
+try
+{
+    employee = repository.Get(id);
+}
+catch
+{
+    return NotFound();
+}
+```
+
+Better:
+
+```csharp
+var employee = repository.Get(id);
+
+if (employee == null)
+{
+    return NotFound();
+}
+```
+
+Exceptions should represent **exceptional** situations, not expected business outcomes.
+
+---
+
+# Real Project Scenario
+
+Suppose your API processes loan applications.
+
+Flow:
+
+```
+Controller
+
+↓
+
+Loan Service
+
+↓
+
+Repository
+
+↓
+
+SQL Server
+```
+
+If SQL Server is unavailable:
+
+1. Repository throws an exception.
+2. Service doesn't swallow it unnecessarily.
+3. Global exception middleware catches it.
+4. Middleware logs the full exception with the correlation ID.
+5. Client receives:
+
+```json
+{
+  "message": "An unexpected error occurred."
+}
+```
+
+This prevents leaking internal implementation details while keeping enough information in the logs for troubleshooting.
+
+---
+
+# Interview Answer (5+ Years)
+
+**Interviewer:** *"How do you handle exceptions in ASP.NET Core?"*
+
+A strong answer:
+
+> "I avoid adding `try/catch` blocks in every controller. Instead, I use a global exception handling middleware to catch unhandled exceptions, log them through `ILogger` using structured logging, and return standardized error responses. For expected business scenarios, I use custom exceptions where appropriate. When rethrowing exceptions, I use `throw;` instead of `throw ex;` to preserve the original stack trace. I also avoid exposing internal exception details to API consumers."
+
+---
+
+## Day 1 Progress
+
+You have now covered nearly all of the core C# topics expected in senior backend interviews.
+
+The next major area is **ASP.NET Core Internals**, starting with:
+
+* HTTP Request Pipeline
+* Middleware execution
+* Routing
+* Endpoint execution
+* Model Binding
+* Filters
+* Dependency Injection in the request pipeline
+* How a request flows from the browser to your controller
+
+This is one of the highest-value topics for backend engineering interviews because it connects many of the concepts you've already learned.
+
