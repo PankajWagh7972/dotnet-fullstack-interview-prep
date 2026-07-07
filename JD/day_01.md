@@ -2989,4 +2989,676 @@ A strong answer is:
 
 > "At application startup, services are registered in the `IServiceCollection`. When `Build()` is called, ASP.NET Core creates a `ServiceProvider`, which acts as the DI container. When a request reaches a controller, the framework inspects the controller's constructor using reflection, builds the dependency graph by recursively resolving registered services according to their lifetimes, creates the required objects, injects them through the constructor, and automatically disposes disposable services when their lifetime ends."
 
-If you can explain that flow confidently, it demonstrates a solid understanding of how DI works beyond just using `AddScoped()` or `AddSingleton()`.
+--------
+Excellent. Now let's move to what is arguably the **#1 technical topic** for senior .NET interviews.
+
+# Day 1 – Part 4: async/await, Task & Multithreading
+
+> **Interview Importance: ⭐⭐⭐⭐⭐**
+
+Almost every interviewer asks at least one of these:
+
+* What happens internally when you use `async/await`?
+* How does `await` work?
+* Difference between `Task`, `Thread`, and `async`?
+* Can `async` improve performance?
+* Why should we use async in Web APIs?
+* What is `ConfigureAwait(false)`?
+* What happens if you don't `await` a Task?
+
+Let's understand it from the basics.
+
+---
+
+# Why do we need async?
+
+Suppose your API calls SQL Server.
+
+```csharp
+public IActionResult GetEmployees()
+{
+    var employees = _context.Employees.ToList();
+
+    return Ok(employees);
+}
+```
+
+Timeline
+
+```
+Request
+
+↓
+
+Thread Starts
+
+↓
+
+SQL Query (3 seconds)
+
+↓
+
+Thread Waits
+
+↓
+
+Response
+```
+
+During those **3 seconds**, the thread is **doing nothing**.
+
+It is simply waiting for SQL Server.
+
+That is a waste of a valuable ThreadPool thread.
+
+---
+
+## What happens in a synchronous call?
+
+```
+Request
+
+↓
+
+Thread #25
+
+↓
+
+Call SQL
+
+↓
+
+Wait...
+
+↓
+
+Wait...
+
+↓
+
+Wait...
+
+↓
+
+Receive Data
+
+↓
+
+Return Response
+```
+
+Thread #25 is blocked.
+
+If 1000 requests come simultaneously,
+
+ASP.NET needs many more threads.
+
+Eventually, the ThreadPool becomes exhausted.
+
+---
+
+# What does async do?
+
+Instead of blocking the thread,
+
+it releases it back to the ThreadPool while waiting.
+
+```
+Request
+
+↓
+
+Thread #25
+
+↓
+
+Start SQL Query
+
+↓
+
+Release Thread
+
+↓
+
+ThreadPool can use Thread #25 for another request
+
+↓
+
+SQL Completes
+
+↓
+
+Resume execution
+
+↓
+
+Return Response
+```
+
+This is why ASP.NET Core scales better with asynchronous I/O.
+
+---
+
+# Important Interview Point
+
+### Does async make SQL faster?
+
+**No.**
+
+This is a common misconception.
+
+Suppose SQL takes
+
+```
+3 seconds
+```
+
+Sync
+
+```
+3 seconds
+```
+
+Async
+
+```
+Still 3 seconds
+```
+
+The SQL execution time hasn't changed.
+
+The benefit is that the server thread is free to process other requests.
+
+### Interview Answer
+
+> Async does not reduce execution time for I/O operations. It improves scalability by preventing request threads from being blocked while waiting for external resources such as databases, file systems, or HTTP services.
+
+---
+
+# What is Task?
+
+A `Task` represents an operation that **will complete in the future**.
+
+Example
+
+```csharp
+Task<int> task = GetEmployeesAsync();
+```
+
+You're not getting the result immediately.
+
+You're getting a promise that the result will be available later.
+
+---
+
+# What is async?
+
+`async` tells the compiler:
+
+> "This method contains one or more await operations."
+
+Example
+
+```csharp
+public async Task<Employee> GetEmployeeAsync()
+{
+}
+```
+
+Notice
+
+`async` does **not** create a new thread.
+
+This is a very common interview question.
+
+---
+
+# What does await do?
+
+Suppose
+
+```csharp
+public async Task GetData()
+{
+    var employees = await GetEmployeesAsync();
+
+    Console.WriteLine(employees.Count);
+}
+```
+
+When execution reaches
+
+```csharp
+await GetEmployeesAsync();
+```
+
+the method pauses.
+
+The current thread is returned to the ThreadPool.
+
+When the database call finishes,
+
+execution resumes **after** the `await`.
+
+---
+
+# What happens internally?
+
+Consider:
+
+```csharp
+public async Task<int> GetValueAsync()
+{
+    await Task.Delay(5000);
+
+    return 10;
+}
+```
+
+The compiler transforms it into a **state machine**.
+
+Conceptually:
+
+```
+State 0
+
+↓
+
+Call Task.Delay()
+
+↓
+
+Return to caller
+
+↓
+
+Delay completes
+
+↓
+
+State 1
+
+↓
+
+Return 10
+```
+
+The compiler generates this state machine automatically using `AsyncTaskMethodBuilder`.
+
+You don't write it yourself.
+
+---
+
+# Does async create a new thread?
+
+**No.**
+
+This is one of the most frequently asked questions.
+
+### Wrong Answer
+
+> Yes, async creates another thread.
+
+### Correct Answer
+
+> No. Async itself does not create a new thread. It enables non-blocking asynchronous operations. New threads are only created if you explicitly use APIs such as `Task.Run()`.
+
+---
+
+# Task vs Thread
+
+| Task                 | Thread                              |
+| -------------------- | ----------------------------------- |
+| Logical unit of work | Physical OS thread                  |
+| Lightweight          | Expensive                           |
+| Uses ThreadPool      | Own OS thread                       |
+| Preferred in .NET    | Used less often in application code |
+
+Think of it like this:
+
+```
+Task
+
+↓
+
+ThreadPool
+
+↓
+
+Available Thread
+```
+
+Tasks are scheduled onto ThreadPool threads.
+
+---
+
+# Thread vs ThreadPool vs Task
+
+## Thread
+
+```csharp
+var thread = new Thread(() =>
+{
+    Console.WriteLine("Hello");
+});
+
+thread.Start();
+```
+
+Creates a dedicated OS thread.
+
+Expensive.
+
+---
+
+## ThreadPool
+
+Managed by .NET.
+
+```
+Pool
+
+↓
+
+Thread 1
+
+Thread 2
+
+Thread 3
+```
+
+Threads are reused.
+
+More efficient.
+
+---
+
+## Task
+
+```csharp
+Task.Run(() =>
+{
+});
+```
+
+Uses the ThreadPool internally.
+
+Preferred.
+
+---
+
+# Task.Run()
+
+Example
+
+```csharp
+await Task.Run(() =>
+{
+    CalculateLargeReport();
+});
+```
+
+This executes CPU-intensive work on a ThreadPool thread.
+
+---
+
+## Should you use Task.Run() in ASP.NET Core APIs?
+
+Usually **No**.
+
+Why?
+
+ASP.NET Core already uses ThreadPool threads for request processing.
+
+Wrapping synchronous code in `Task.Run()` usually just moves work from one ThreadPool thread to another.
+
+Only use it when you have genuine CPU-bound work that you intentionally want to offload.
+
+---
+
+# CPU-bound vs I/O-bound
+
+## CPU-bound
+
+Examples:
+
+* Image processing
+* PDF generation
+* Compression
+* Encryption
+* Complex calculations
+
+Use:
+
+```csharp
+Task.Run(...)
+```
+
+if you need to offload that work.
+
+---
+
+## I/O-bound
+
+Examples:
+
+* SQL queries
+* HTTP calls
+* Reading files
+* Azure Blob Storage
+* Redis
+
+Use the asynchronous APIs directly.
+
+```csharp
+await _context.Employees.ToListAsync();
+```
+
+Do **not** wrap them in `Task.Run()`.
+
+---
+
+# Return Types
+
+### Task
+
+```csharp
+public async Task SaveAsync()
+{
+}
+```
+
+No return value.
+
+---
+
+### Task<T>
+
+```csharp
+public async Task<Employee> GetEmployeeAsync()
+{
+}
+```
+
+Returns a value.
+
+---
+
+### ValueTask
+
+Introduced to reduce allocations when an operation often completes synchronously.
+
+```csharp
+public ValueTask<int> GetValueAsync()
+{
+}
+```
+
+Use only when profiling shows it provides a benefit. For most application code, `Task` is the better default.
+
+---
+
+### async void
+
+Avoid it.
+
+```csharp
+public async void Save()
+{
+}
+```
+
+Problems:
+
+* Caller can't await it.
+* Exceptions are difficult to handle.
+* Poor testability.
+
+Use only for event handlers.
+
+---
+
+# ConfigureAwait(false)
+
+This is a classic interview topic.
+
+In older ASP.NET and desktop UI frameworks, `await` captured the current synchronization context by default.
+
+`ConfigureAwait(false)` tells the runtime:
+
+> "Don't resume on the original synchronization context."
+
+Example
+
+```csharp
+await SomeOperationAsync().ConfigureAwait(false);
+```
+
+Benefits in applications with a synchronization context:
+
+* Avoids unnecessary context switching.
+* Helps prevent certain deadlocks.
+
+### What about ASP.NET Core?
+
+ASP.NET Core **does not have a `SynchronizationContext`** like classic ASP.NET or WinForms/WPF.
+
+So in ASP.NET Core applications, `ConfigureAwait(false)` generally provides **little or no practical benefit**.
+
+It is still commonly used in reusable libraries because those libraries might run in environments that do have a synchronization context.
+
+---
+
+# Common Interview Questions
+
+## Q1. What happens if you don't await a Task?
+
+Example
+
+```csharp
+SaveAsync();
+
+return Ok();
+```
+
+The API returns immediately.
+
+The background operation continues.
+
+If it throws an exception, you may never observe it unless you handle it.
+
+---
+
+## Q2. Can an async method have no await?
+
+Yes.
+
+```csharp
+public async Task Test()
+{
+}
+```
+
+It compiles (with a warning).
+
+The compiler warns because the method runs synchronously.
+
+In most cases, remove `async` or add an actual `await`.
+
+---
+
+## Q3. Can Main() be async?
+
+Yes.
+
+```csharp
+public static async Task Main()
+{
+}
+```
+
+Supported in modern C#.
+
+---
+
+## Q4. Can constructors be async?
+
+No.
+
+Constructors cannot be declared `async`.
+
+Alternatives:
+
+* Static async factory methods.
+* Explicit initialization methods.
+
+---
+
+## Q5. Is async faster than synchronous code?
+
+No.
+
+Async improves **throughput and scalability**, not the speed of the underlying operation.
+
+---
+
+## Q6. Why should EF Core use ToListAsync() instead of ToList()?
+
+Because database access is I/O-bound.
+
+`ToListAsync()` frees the request thread while waiting for SQL Server, allowing the server to handle more concurrent requests.
+
+---
+
+# Questions You Will Almost Certainly Be Asked
+
+1. Explain `async` and `await` internally.
+2. Does `async` create a new thread?
+3. What is the difference between `Task` and `Thread`?
+4. When would you use `Task.Run()`?
+5. Explain CPU-bound vs I/O-bound operations.
+6. Why should Web APIs be asynchronous?
+7. Why is `async void` discouraged?
+8. What happens if you forget to `await` a Task?
+9. Explain `ConfigureAwait(false)` and when it matters.
+10. How does the compiler implement `async`/`await`?
+
+If you can answer those confidently, you'll be well prepared for the async portion of a senior .NET interview.
+
+---
+
+## Next Topic
+
+The next topic in Day 1 is **Memory Management & Garbage Collection**, where we'll cover:
+
+* Stack vs Heap
+* Value Types vs Reference Types (deep dive)
+* Garbage Collection generations (Gen 0, 1, 2)
+* Large Object Heap (LOH)
+* Boxing & Unboxing
+* `IDisposable` vs Finalizers
+* `using` statement and `using` declaration
+* Memory leaks in .NET
+* Weak references
+* Common GC interview questions for experienced developers
+
