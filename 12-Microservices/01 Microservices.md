@@ -925,3 +925,538 @@ This design keeps services loosely coupled, scalable, and resilient.
 | OAuth2 / JWT / Entra ID             | ⭐⭐⭐⭐⭐      |
 
 These are the topics that appear most consistently in senior .NET Core microservices interviews because they focus on designing, operating, and troubleshooting distributed systems—not just building REST APIs.
+
+
+This is one of the **most common interview questions** for .NET Core Microservices.
+
+Interviewers usually expect you to explain:
+
+1. **What communication options exist**
+2. **When to use each**
+3. **How it's implemented in .NET**
+
+---
+
+# Ways One Microservice Calls Another
+
+There are **two major approaches**.
+
+```
+                Service A
+                    |
+        -------------------------
+        |                       |
+   Synchronous             Asynchronous
+        |                       |
+ REST / gRPC          RabbitMQ / Azure Service Bus / Kafka
+```
+
+---
+
+# 1. Synchronous Communication (REST API)
+
+Suppose we have:
+
+```
+Order Service
+
+Payment Service
+
+Inventory Service
+```
+
+When an order is created,
+
+```
+Client
+
+↓
+
+Order Service
+
+↓
+
+Payment Service
+
+↓
+
+Inventory Service
+
+↓
+
+Response
+```
+
+Order Service **waits** until Payment Service responds.
+
+### Example
+
+Order Service
+
+```http
+POST /api/orders
+```
+
+Inside Order Service
+
+```csharp
+public class OrderService
+{
+    private readonly HttpClient _httpClient;
+
+    public OrderService(HttpClient httpClient)
+    {
+        _httpClient = httpClient;
+    }
+
+    public async Task ProcessPayment()
+    {
+        var response = await _httpClient.PostAsJsonAsync(
+            "https://payment-service/api/payment",
+            new
+            {
+                OrderId = 10,
+                Amount = 500
+            });
+
+        response.EnsureSuccessStatusCode();
+    }
+}
+```
+
+Register HttpClient
+
+```csharp
+builder.Services.AddHttpClient<OrderService>();
+```
+
+---
+
+## What happens internally?
+
+```
+Order Service
+
+↓
+
+HttpClient
+
+↓
+
+Payment Service API
+
+↓
+
+Payment Database
+
+↓
+
+Response
+
+↓
+
+Order Service
+```
+
+---
+
+## Problem
+
+If Payment Service is down
+
+```
+Order Service
+
+↓
+
+Waiting...
+
+↓
+
+Timeout
+
+↓
+
+Failure
+```
+
+This is called **tight coupling**.
+
+---
+
+# Solution
+
+Use **Polly**
+
+```csharp
+builder.Services.AddHttpClient<OrderService>()
+.AddTransientHttpErrorPolicy(policy =>
+    policy.WaitAndRetryAsync(3,
+        retry => TimeSpan.FromSeconds(2)));
+```
+
+Now if Payment Service temporarily fails
+
+```
+Retry
+
+↓
+
+Retry
+
+↓
+
+Retry
+
+↓
+
+Success
+```
+
+---
+
+# Add Circuit Breaker
+
+Instead of retrying forever
+
+```
+Payment Down
+
+↓
+
+Open Circuit
+
+↓
+
+No More Calls
+
+↓
+
+Try Again After 30 Seconds
+```
+
+Example
+
+```csharp
+.AddTransientHttpErrorPolicy(policy =>
+    policy.CircuitBreakerAsync(5, TimeSpan.FromSeconds(30)));
+```
+
+---
+
+# 2. gRPC Communication
+
+Instead of JSON
+
+```
+Order Service
+
+↓
+
+Protocol Buffers
+
+↓
+
+Payment Service
+```
+
+Advantages
+
+* Faster
+* Binary
+* HTTP/2
+* Less network traffic
+
+Mostly used
+
+```
+Internal Microservices
+```
+
+---
+
+# 3. Asynchronous Communication (Recommended)
+
+Instead of calling Payment directly
+
+Order publishes an event.
+
+```
+Order Service
+
+↓
+
+RabbitMQ
+
+↓
+
+Payment Service
+
+↓
+
+Inventory Service
+
+↓
+
+Notification Service
+```
+
+Order doesn't wait.
+
+---
+
+Example
+
+Order Service
+
+```csharp
+await bus.Publish(new OrderCreated
+{
+    OrderId = 100,
+    Amount = 500
+});
+```
+
+Payment Service
+
+```csharp
+public class OrderCreatedConsumer
+{
+    public async Task Consume(OrderCreated message)
+    {
+        // Process payment
+    }
+}
+```
+
+---
+
+# Complete Flow
+
+```
+Customer
+
+↓
+
+Order API
+
+↓
+
+Save Order
+
+↓
+
+Publish Event
+
+↓
+
+RabbitMQ
+
+↓
+
+Payment Service
+
+↓
+
+Payment Completed Event
+
+↓
+
+Inventory Service
+
+↓
+
+Inventory Reserved Event
+
+↓
+
+Notification Service
+
+↓
+
+Email Sent
+```
+
+Every service is independent.
+
+---
+
+# Which One Should You Use?
+
+### REST
+
+Use when
+
+```
+Need immediate response
+
+Example
+
+Login
+
+Check Balance
+
+Get Product
+
+Search Products
+```
+
+---
+
+### Messaging
+
+Use when
+
+```
+Background Processing
+
+Order Created
+
+Email
+
+SMS
+
+Invoice
+
+Stock Update
+```
+
+---
+
+# Real Banking Example
+
+Customer transfers ₹1000.
+
+```
+Transfer API
+
+↓
+
+Transaction Service
+
+↓
+
+Debit Account
+```
+
+Now
+
+```
+Publish Event
+
+↓
+
+Fraud Detection
+
+↓
+
+SMS
+
+↓
+
+Email
+
+↓
+
+Audit
+
+↓
+
+Analytics
+
+↓
+
+Notification
+```
+
+Notice
+
+Transaction Service never calls
+
+```
+SMS
+
+Email
+
+Analytics
+
+Fraud
+```
+
+directly.
+
+Everything listens to events.
+
+---
+
+# What About Service URLs?
+
+Never hardcode
+
+```text
+https://10.10.1.25/api/payment
+```
+
+Use:
+
+* **Kubernetes DNS** (e.g., `http://payment-service`)
+* **Service Discovery** (Consul, Eureka)
+* Configuration per environment
+
+Example
+
+```json
+{
+  "Services": {
+    "PaymentService": "http://payment-service"
+  }
+}
+```
+
+Then
+
+```csharp
+builder.Services.AddHttpClient("PaymentClient", client =>
+{
+    client.BaseAddress = new Uri(builder.Configuration["Services:PaymentService"]!);
+});
+```
+
+---
+
+# Typical Architecture in .NET
+
+```
+                 Client
+                    │
+             API Gateway (YARP)
+                    │
+    ┌───────────────┼───────────────┐
+    │               │               │
+Order Service   Product Service   User Service
+    │
+    │ HTTP/gRPC (Sync)
+    ▼
+Payment Service
+    │
+    │ Publish Event
+    ▼
+Azure Service Bus / RabbitMQ
+    │
+ ┌──┴───────────────┐
+ ▼                  ▼
+Inventory      Notification
+Service          Service
+```
+
+---
+
+# Interview Answer (2-Minute Version)
+
+> In a .NET microservices architecture, services communicate either synchronously or asynchronously. For synchronous communication, I typically use `HttpClient` with `IHttpClientFactory` for REST APIs or gRPC for high-performance internal communication. To improve resilience, I configure Polly policies such as retry, circuit breaker, and timeout.
+>
+> For asynchronous communication, I use a message broker like RabbitMQ or Azure Service Bus. Instead of one service directly calling another, it publishes an event (for example, `OrderCreated`), and interested services consume that event independently. This reduces coupling, improves scalability, and makes the system more resilient to failures.
+>
+> I also avoid hardcoded service URLs by using service discovery or Kubernetes DNS, and I use correlation IDs and distributed tracing to track requests across services.
+
+This answer demonstrates not only **how** services communicate, but also that you understand **resilience, scalability, and production-ready microservice design**, which is what senior .NET interviewers are looking for.
