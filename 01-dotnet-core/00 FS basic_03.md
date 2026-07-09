@@ -221,3 +221,265 @@ The method is located and invoked at **runtime**.
 > **Early Binding** resolves method calls at **compile time**, providing **better performance and compile-time type safety**.
 > **Late Binding** resolves method calls at **runtime**, offering **more flexibility** but with **runtime overhead and the possibility of runtime errors**.
 
+### 3. What are Filters in ASP.NET Core?
+
+## Definition
+
+**Filters** are components in ASP.NET Core that allow you to execute code **before or after** specific stages of the request processing pipeline, such as before an action executes, after an action completes, before a result is returned, or when an exception occurs.
+
+They are commonly used for **cross-cutting concerns** like logging, authentication, authorization, exception handling, and validation.
+
+---
+
+## Request Flow
+
+```text
+HTTP Request
+      │
+      ▼
+Authorization Filter
+      │
+      ▼
+Resource Filter
+      │
+      ▼
+Action Filter (Before)
+      │
+      ▼
+Controller Action
+      │
+      ▼
+Action Filter (After)
+      │
+      ▼
+Result Filter (Before)
+      │
+      ▼
+Result Execution
+      │
+      ▼
+Result Filter (After)
+      │
+      ▼
+HTTP Response
+
+(If an exception occurs → Exception Filter)
+```
+
+---
+
+# Types of Filters
+
+| Filter Type              | Runs When                    | Common Use                     |
+| ------------------------ | ---------------------------- | ------------------------------ |
+| **Authorization Filter** | Before anything else         | Authentication & Authorization |
+| **Resource Filter**      | Before/After model binding   | Caching, resource management   |
+| **Action Filter**        | Before & after action method | Logging, validation, timing    |
+| **Exception Filter**     | When an exception occurs     | Error handling, logging        |
+| **Result Filter**        | Before & after action result | Modify response, headers       |
+
+---
+
+# 1. Authorization Filter
+
+### Purpose
+
+Checks whether the user is authorized before executing the request.
+
+### Runs
+
+✔ First filter in the pipeline.
+
+### Example
+
+```csharp
+[Authorize]
+public IActionResult Dashboard()
+{
+    return View();
+}
+```
+
+### Real-world Uses
+
+* Login authentication
+* Role-based authorization
+* JWT token validation
+
+---
+
+# 2. Resource Filter
+
+### Purpose
+
+Runs before model binding and after the response is generated.
+
+### Use Cases
+
+* Response caching
+* Performance monitoring
+* Resource allocation/cleanup
+
+---
+
+# 3. Action Filter
+
+### Purpose
+
+Executes before and after the controller action.
+
+### Example
+
+```csharp
+public class LogActionFilter : ActionFilterAttribute
+{
+    public override void OnActionExecuting(ActionExecutingContext context)
+    {
+        Console.WriteLine("Before Action");
+    }
+
+    public override void OnActionExecuted(ActionExecutedContext context)
+    {
+        Console.WriteLine("After Action");
+    }
+}
+```
+
+Apply it:
+
+```csharp
+[LogActionFilter]
+public IActionResult Index()
+{
+    return View();
+}
+```
+
+### Real-world Uses
+
+* Logging
+* Input validation
+* Measuring execution time
+* Auditing
+
+---
+
+# 4. Exception Filter
+
+### Purpose
+
+Handles unhandled exceptions thrown by the action.
+
+### Example
+
+```csharp
+public class CustomExceptionFilter : ExceptionFilterAttribute
+{
+    public override void OnException(ExceptionContext context)
+    {
+        Console.WriteLine(context.Exception.Message);
+
+        context.Result = new ContentResult
+        {
+            Content = "Something went wrong."
+        };
+
+        context.ExceptionHandled = true;
+    }
+}
+```
+
+### Real-world Uses
+
+* Global exception handling
+* Logging errors
+* Returning custom error responses
+
+---
+
+# 5. Result Filter
+
+### Purpose
+
+Runs before and after the action result is executed.
+
+### Example
+
+```csharp
+public class HeaderFilter : ResultFilterAttribute
+{
+    public override void OnResultExecuting(ResultExecutingContext context)
+    {
+        context.HttpContext.Response.Headers.Add("App-Version", "1.0");
+    }
+}
+```
+
+### Real-world Uses
+
+* Add response headers
+* Modify response
+* Compress or transform output
+
+---
+
+# Filter Execution Order
+
+```text
+Request
+   │
+   ▼
+Authorization Filter
+   │
+   ▼
+Resource Filter
+   │
+   ▼
+Action Filter (Before)
+   │
+   ▼
+Controller Action
+   │
+   ▼
+Action Filter (After)
+   │
+   ▼
+Result Filter (Before)
+   │
+   ▼
+Result Execution
+   │
+   ▼
+Result Filter (After)
+   │
+   ▼
+Response
+
+Exception Filter executes only if an unhandled exception occurs.
+```
+
+---
+
+# Interview One-Liner
+
+> **Filters in ASP.NET Core are reusable components that execute code before or after different stages of request processing. They are used to implement cross-cutting concerns such as authentication, authorization, logging, validation, caching, and exception handling.**
+
+---
+
+# Quick Revision Table
+
+| Filter            | Executes                   | Purpose                        |
+| ----------------- | -------------------------- | ------------------------------ |
+| **Authorization** | Before everything          | Authentication & Authorization |
+| **Resource**      | Before/After model binding | Caching, resource management   |
+| **Action**        | Before/After action        | Logging, validation, auditing  |
+| **Exception**     | On exception               | Error handling                 |
+| **Result**        | Before/After result        | Modify response, headers       |
+
+### **Memory Trick**
+
+* **Authorization** → **Who are you?**
+* **Resource** → **Prepare resources**
+* **Action** → **Before & after business logic**
+* **Exception** → **Handle errors**
+* **Result** → **Modify the response before sending it**
