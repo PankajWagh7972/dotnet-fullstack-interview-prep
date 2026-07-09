@@ -1705,3 +1705,232 @@ var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 Think:
 
 **Application Starts → Background Task Runs → Application Stops → Task Stops**
+
+
+# What is `IHttpClientFactory` in ASP.NET Core?
+
+## Definition
+
+`IHttpClientFactory` is a built-in factory introduced in ASP.NET Core to **create and manage `HttpClient` instances efficiently**.
+
+It helps prevent **socket exhaustion**, manages the lifetime of `HttpClient`, and provides centralized configuration for outgoing HTTP requests.
+
+> **Interview Definition:**
+> **`IHttpClientFactory` is used to create and manage `HttpClient` instances efficiently, avoiding socket exhaustion and enabling centralized configuration, logging, and resiliency for HTTP calls.**
+
+---
+
+# Why not create `HttpClient` using `new`?
+
+❌ Bad Practice
+
+```csharp
+public async Task GetData()
+{
+    using var client = new HttpClient();
+
+    var response = await client.GetAsync("https://api.example.com");
+}
+```
+
+### Problem
+
+Every `HttpClient` creates a new underlying connection.
+
+If many requests are made:
+
+```text
+Request 1 → New Connection
+Request 2 → New Connection
+Request 3 → New Connection
+...
+Thousands of connections
+        ↓
+Socket Exhaustion
+```
+
+This can degrade performance and cause connection failures.
+
+---
+
+# Solution: `IHttpClientFactory`
+
+The factory:
+
+* Reuses underlying `HttpMessageHandler` instances.
+* Manages connection pooling.
+* Creates lightweight `HttpClient` objects.
+* Improves performance and reliability.
+
+---
+
+# Register in `Program.cs`
+
+```csharp
+builder.Services.AddHttpClient();
+```
+
+---
+
+# Basic Example
+
+### Service
+
+```csharp
+public class WeatherService
+{
+    private readonly IHttpClientFactory _httpClientFactory;
+
+    public WeatherService(IHttpClientFactory httpClientFactory)
+    {
+        _httpClientFactory = httpClientFactory;
+    }
+
+    public async Task<string> GetWeather()
+    {
+        var client = _httpClientFactory.CreateClient();
+
+        return await client.GetStringAsync("https://api.example.com/weather");
+    }
+}
+```
+
+---
+
+# Named Client
+
+Useful when calling multiple external APIs.
+
+### Register
+
+```csharp
+builder.Services.AddHttpClient("WeatherApi", client =>
+{
+    client.BaseAddress = new Uri("https://api.weather.com/");
+    client.DefaultRequestHeaders.Add("Accept", "application/json");
+});
+```
+
+### Use
+
+```csharp
+var client = _httpClientFactory.CreateClient("WeatherApi");
+
+var response = await client.GetAsync("forecast");
+```
+
+---
+
+# Typed Client (Recommended)
+
+### Service
+
+```csharp
+public class WeatherApiService
+{
+    private readonly HttpClient _httpClient;
+
+    public WeatherApiService(HttpClient httpClient)
+    {
+        _httpClient = httpClient;
+    }
+
+    public async Task<string> GetWeather()
+    {
+        return await _httpClient.GetStringAsync("forecast");
+    }
+}
+```
+
+### Register
+
+```csharp
+builder.Services.AddHttpClient<WeatherApiService>(client =>
+{
+    client.BaseAddress = new Uri("https://api.weather.com/");
+});
+```
+
+Now `WeatherApiService` receives a configured `HttpClient` automatically.
+
+---
+
+# Benefits of `IHttpClientFactory`
+
+* ✅ Prevents socket exhaustion.
+* ✅ Reuses underlying connections.
+* ✅ Centralized configuration (Base URL, Headers, Timeout).
+* ✅ Supports Dependency Injection.
+* ✅ Easy to add logging and retry policies (e.g., Polly).
+
+---
+
+# Real-World Use Cases
+
+* Calling payment gateways.
+* Consuming third-party REST APIs.
+* Calling microservices.
+* Integrating with external systems (CRM, ERP, Azure services).
+
+---
+
+# Interview Questions
+
+### **Q: Why is `HttpClient` intended to be reused?**
+
+Creating and disposing many `HttpClient` instances can exhaust available sockets because the underlying TCP connections are not released immediately. Reusing handlers through `IHttpClientFactory` avoids this problem.
+
+---
+
+### **Q: What are the types of `HttpClient` registration?**
+
+1. **Basic Client**
+
+   ```csharp
+   builder.Services.AddHttpClient();
+   ```
+
+2. **Named Client**
+
+   ```csharp
+   builder.Services.AddHttpClient("GitHub");
+   ```
+
+3. **Typed Client** (Most commonly used)
+
+   ```csharp
+   builder.Services.AddHttpClient<MyService>();
+   ```
+
+---
+
+# Interview One-Liner
+
+> **`IHttpClientFactory` is used to create and manage `HttpClient` instances efficiently. It prevents socket exhaustion, enables centralized configuration, integrates with dependency injection, and supports resilient HTTP communication with external services.**
+
+---
+
+# Quick Revision
+
+| Feature      | `IHttpClientFactory`                               |
+| ------------ | -------------------------------------------------- |
+| Purpose      | Manage `HttpClient` instances                      |
+| Registration | `builder.Services.AddHttpClient()`                 |
+| Main Benefit | Prevents socket exhaustion                         |
+| Supports DI  | ✅ Yes                                              |
+| Types        | Basic, Named, Typed                                |
+| Common Uses  | REST APIs, microservices, third-party integrations |
+
+### **Memory Trick**
+
+Think:
+
+**External API Call → `IHttpClientFactory` → `HttpClient` → Response**
+
+Instead of:
+
+**`new HttpClient()` every request ❌**
+
+Use:
+
+**`IHttpClientFactory.CreateClient()` ✅**
