@@ -1,5 +1,5 @@
 
-## Difference between `var`, `dynamic`, and `object` (Interview Notes)
+## 1. Difference between `var`, `dynamic`, and `object` (Interview Notes)
 
 | Feature          | `var`                | `dynamic`             | `object`              |
 | ---------------- | -------------------- | --------------------- | --------------------- |
@@ -94,7 +94,7 @@ Console.WriteLine(((string)c).Length); // ✅
 * **`dynamic`** → *Runtime type resolution, bypasses compile-time type checking.*
 * **`object`** → *Base class of all C# types; requires casting to access specific members.*
 
-* # Difference Between Early Binding and Late Binding (C# Interview Notes)
+# 2. Difference Between Early Binding and Late Binding (C# Interview Notes)
 
 ## Definition
 
