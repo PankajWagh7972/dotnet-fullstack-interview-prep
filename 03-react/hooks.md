@@ -407,3 +407,611 @@ This prevents memory leaks and stale subscriptions.
 # Interview Answer (5+ Years)
 
 > Functional components don't have explicit lifecycle methods like class components. Instead, React Hooks manage lifecycle behavior. On **mount**, the component renders, `useLayoutEffect` runs after the DOM update but before the browser paints, and `useEffect` runs after the paint. On **updates**, React re-renders the component, cleans up the previous effect if necessary, and then runs the new effect. On **unmount**, React executes the cleanup function returned from `useEffect` or `useLayoutEffect`, making it the right place to remove event listeners, clear timers, close WebSocket connections, or cancel pending requests.
+>
+
+This is a very common React interview question, especially for **5+ years of experience**. Interviewers usually expect you to explain **when each hook runs, why React provides both, and where to use them**.
+
+---
+
+# Short Answer
+
+| useEffect                                    | useLayoutEffect                                       |
+| -------------------------------------------- | ----------------------------------------------------- |
+| Runs **after the browser paints the screen** | Runs **before the browser paints the screen**         |
+| Does not block painting                      | Blocks painting until it finishes                     |
+| Used for API calls, subscriptions, timers    | Used for DOM measurements and synchronous DOM updates |
+| Better for performance                       | Can hurt performance if overused                      |
+
+---
+
+# React Rendering Lifecycle
+
+Let's understand what happens internally.
+
+```text
+State Changes
+
+↓
+
+React renders Virtual DOM
+
+↓
+
+React updates Real DOM
+
+↓
+
+useLayoutEffect Runs
+
+↓
+
+Browser Paints UI
+
+↓
+
+useEffect Runs
+```
+
+The key difference is **when the effect executes relative to the browser painting the updated UI**.
+
+---
+
+# useEffect
+
+`useEffect` runs **after** React has updated the DOM **and after the browser has painted the screen**.
+
+```jsx
+useEffect(() => {
+    console.log("useEffect");
+}, []);
+```
+
+Sequence:
+
+```text
+Render
+
+↓
+
+Update DOM
+
+↓
+
+Browser Paint
+
+↓
+
+useEffect
+```
+
+Since it doesn't block rendering, it provides a smoother user experience.
+
+---
+
+## Real-world Example: Fetching Data
+
+```jsx
+function Users() {
+    const [users, setUsers] = useState([]);
+
+    useEffect(() => {
+        fetch("/api/users")
+            .then(res => res.json())
+            .then(setUsers);
+    }, []);
+
+    return <UserList users={users} />;
+}
+```
+
+The user sees the page immediately, while the data loads in the background.
+
+This is the most common use case.
+
+---
+
+## Other Common Uses
+
+* API calls
+* Event listeners
+* WebSocket connections
+* Timers (`setInterval`, `setTimeout`)
+* Analytics
+* Logging
+
+---
+
+# useLayoutEffect
+
+`useLayoutEffect` runs **after the DOM has been updated but before the browser paints the screen**.
+
+```jsx
+useLayoutEffect(() => {
+    console.log("useLayoutEffect");
+}, []);
+```
+
+Sequence:
+
+```text
+Render
+
+↓
+
+Update DOM
+
+↓
+
+useLayoutEffect
+
+↓
+
+Browser Paint
+```
+
+Since it runs before painting, it can safely read layout information and make synchronous DOM changes without the user seeing intermediate states.
+
+---
+
+# Real-world Example: Measuring an Element
+
+Suppose you need to know the height of a `<div>`.
+
+```jsx
+function Box() {
+    const ref = useRef();
+
+    useLayoutEffect(() => {
+        console.log(ref.current.offsetHeight);
+    }, []);
+
+    return <div ref={ref}>Hello</div>;
+}
+```
+
+Here, the DOM exists, but the browser hasn't painted yet, so the measurement is accurate and there is no visual flicker.
+
+---
+
+# Another Example: Tooltip Positioning
+
+Imagine a tooltip.
+
+Without `useLayoutEffect`:
+
+```text
+Render Tooltip
+
+↓
+
+Browser Paint
+
+↓
+
+Measure Position
+
+↓
+
+Move Tooltip
+
+↓
+
+Second Paint
+```
+
+The user briefly sees the tooltip in the wrong position (a flicker).
+
+With `useLayoutEffect`:
+
+```text
+Render Tooltip
+
+↓
+
+Measure Position
+
+↓
+
+Move Tooltip
+
+↓
+
+Browser Paint
+```
+
+The tooltip appears in the correct position immediately.
+
+---
+
+# Example Comparison
+
+### useEffect
+
+```jsx
+useEffect(() => {
+    document.title = "Dashboard";
+}, []);
+```
+
+This update isn't visually critical, so it's fine after the paint.
+
+---
+
+### useLayoutEffect
+
+```jsx
+useLayoutEffect(() => {
+    const width = divRef.current.offsetWidth;
+
+    if (width < 500) {
+        divRef.current.style.fontSize = "14px";
+    }
+}, []);
+```
+
+The size is measured and adjusted before the user sees it.
+
+---
+
+# Why Not Always Use useLayoutEffect?
+
+Because it **blocks the browser from painting**.
+
+Imagine this:
+
+```jsx
+useLayoutEffect(() => {
+    // Heavy calculation
+    for (let i = 0; i < 1000000000; i++) {}
+}, []);
+```
+
+The browser cannot paint until this work finishes, making the UI feel frozen.
+
+`useEffect` avoids this problem by allowing the browser to paint first.
+
+---
+
+# Common Interview Question
+
+### Which is faster?
+
+Neither hook is inherently faster.
+
+* `useEffect` is **better for overall performance** because it doesn't block painting.
+* `useLayoutEffect` executes **earlier**, but can slow down rendering if it does heavy work.
+
+---
+
+# When Should You Use Which?
+
+### Use `useEffect` (90–95% of cases)
+
+* API calls
+* Timers
+* Event listeners
+* Logging
+* Analytics
+* WebSocket connections
+* Updating the document title
+
+### Use `useLayoutEffect` (only when necessary)
+
+* Measuring DOM elements (`offsetWidth`, `offsetHeight`, `getBoundingClientRect`)
+* Calculating layouts
+* Scroll restoration
+* Positioning tooltips, popovers, or modals
+* Preventing UI flicker caused by immediate DOM adjustments
+
+---
+
+# Interview Answer (5+ Years)
+
+> `useEffect` runs after React updates the DOM and the browser has painted the screen, making it ideal for side effects like API calls, subscriptions, timers, and event listeners because it doesn't block rendering. `useLayoutEffect` runs synchronously after the DOM is updated but before the browser paints. It's used when you need to read layout information or synchronously modify the DOM, such as measuring element sizes or positioning tooltips, to avoid visible flicker. Since `useLayoutEffect` blocks painting, it should be reserved for layout-related work, while `useEffect` should be the default choice for most side effects.
+
+
+In modern React, **`React.memo()`** is the functional component equivalent of `PureComponent`. It is commonly used to optimize performance by preventing unnecessary re-renders.
+
+Let's look at a few real-world scenarios.
+
+---
+
+# Use Case 1: Product List (E-commerce)
+
+Suppose you have an online shopping application.
+
+```text
+App
+ ├── Search Box
+ ├── Cart Count
+ └── ProductList
+       ├── ProductCard
+       ├── ProductCard
+       └── ProductCard
+```
+
+Whenever the cart count changes, the parent (`App`) re-renders.
+
+Without `React.memo()`:
+
+```jsx
+function ProductCard({ product }) {
+    console.log(product.name, "Rendered");
+
+    return (
+        <div>
+            {product.name} - ₹{product.price}
+        </div>
+    );
+}
+```
+
+Even though the products haven't changed, every `ProductCard` renders again.
+
+Imagine there are **1000 products**.
+
+```
+Cart Count Changed
+
+↓
+
+App Rendered
+
+↓
+
+1000 ProductCards Render Again ❌
+```
+
+---
+
+Using `React.memo()`:
+
+```jsx
+const ProductCard = React.memo(function ProductCard({ product }) {
+    console.log(product.name, "Rendered");
+
+    return (
+        <div>
+            {product.name} - ₹{product.price}
+        </div>
+    );
+});
+```
+
+Now,
+
+```
+Cart Count Changed
+
+↓
+
+App Rendered
+
+↓
+
+Product Props Same
+
+↓
+
+No ProductCard Render ✅
+```
+
+Huge performance improvement.
+
+---
+
+# Use Case 2: Dashboard
+
+Imagine a dashboard.
+
+```
+Dashboard
+
+├── Header
+├── Sidebar
+├── User Profile
+├── Notifications
+├── Sales Graph
+└── Footer
+```
+
+Every 5 seconds,
+
+```
+Notifications
+```
+
+are refreshed.
+
+Without memoization,
+
+```
+Header
+Sidebar
+User Profile
+Sales Graph
+Footer
+```
+
+also render again.
+
+But these components never changed.
+
+```jsx
+const Header = React.memo(() => {
+    console.log("Header Render");
+    return <h1>Dashboard</h1>;
+});
+```
+
+Now only
+
+```
+Notifications
+```
+
+re-renders.
+
+Everything else stays untouched.
+
+---
+
+# Use Case 3: Chat Application
+
+```
+Chat App
+
+├── Contact List
+├── Chat Window
+└── User Profile
+```
+
+When typing a message:
+
+```
+Hello...
+```
+
+The state changes every keystroke.
+
+Without memoization
+
+```
+Contact List
+User Profile
+```
+
+also render every time.
+
+With
+
+```jsx
+const ContactList = React.memo(ContactList);
+```
+
+only
+
+```
+Chat Window
+```
+
+updates.
+
+---
+
+# Use Case 4: Employee Management System
+
+Suppose your page contains
+
+```
+Employee List
+Attendance Widget
+Leave Balance
+Company News
+```
+
+Attendance refreshes every minute.
+
+Without `React.memo()`
+
+```
+Employee List
+```
+
+renders again although employees didn't change.
+
+Since Employee List might contain hundreds of rows, this wastes CPU time.
+
+---
+
+# Use Case 5: Data Grid
+
+Imagine a table with 10,000 rows.
+
+```
+Customers
+
+Row1
+Row2
+...
+Row10000
+```
+
+A search box is outside the table.
+
+Every key press
+
+```
+a
+ab
+abc
+abcd
+```
+
+updates the parent state.
+
+Without memoization
+
+```
+10000 rows render again.
+```
+
+With
+
+```jsx
+const CustomerRow = React.memo(CustomerRow);
+```
+
+only rows whose props actually change will render.
+
+This is a huge optimization.
+
+---
+
+# When `React.memo()` Does **Not** Work
+
+A common mistake is passing a new object or function on every render.
+
+```jsx
+<ProductCard
+    product={product}
+    style={{ color: "red" }}   // New object every render
+/>
+```
+
+or
+
+```jsx
+<ProductCard
+    onClick={() => addToCart(product)} // New function every render
+/>
+```
+
+Every render creates new references.
+
+```
+Old object != New object
+```
+
+So `React.memo()` thinks the props changed and re-renders anyway.
+
+### Fix
+
+Use `useMemo()` and `useCallback()`.
+
+```jsx
+const style = useMemo(() => ({ color: "red" }), []);
+
+const handleClick = useCallback(() => {
+    addToCart(product);
+}, [product]);
+```
+
+Now the references remain stable, allowing `React.memo()` to skip unnecessary renders.
+
+---
+
+# Interview Answer (5+ Years)
+
+> We use `React.memo()` when a child component receives the same props frequently while the parent re-renders due to unrelated state changes. Typical examples include product cards in an e-commerce app, dashboard widgets, chat contact lists, table rows, and employee lists. `React.memo()` performs a shallow comparison of props and skips rendering if they haven't changed, improving performance. However, it is effective only when prop references remain stable, so it is often used together with `useCallback()` and `useMemo()` for function and object props.
+
