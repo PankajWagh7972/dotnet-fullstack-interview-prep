@@ -2977,3 +2977,338 @@ Ask yourself:
 ### Interview One-Liner
 
 > **For multiple independent API calls, I start both asynchronous operations and use `Task.WhenAll()` to await them concurrently. I do not use `Task.Run()` because HTTP calls are I/O-bound and are already asynchronous. `Task.Run()` is intended for CPU-bound work, not for wrapping asynchronous I/O operations.**
+
+# What is a Deadlock in .NET?
+
+## Definition
+
+A **deadlock** occurs when **two or more threads wait indefinitely for each other to release resources**, so none of them can continue.
+
+> **Interview Definition:**
+> **A deadlock is a situation where two or more threads are blocked forever because each thread is waiting for a resource held by another thread.**
+
+---
+
+# Real-Life Example 🚗
+
+Imagine a narrow bridge.
+
+```text
+Car A ---> <--- Car B
+```
+
+* Car A waits for Car B to move.
+* Car B waits for Car A to move.
+
+Neither can move.
+
+👉 This is a **deadlock**.
+
+---
+
+# Example in C#
+
+```csharp
+object lock1 = new object();
+object lock2 = new object();
+
+Task.Run(() =>
+{
+    lock (lock1)
+    {
+        Thread.Sleep(100);
+
+        lock (lock2)
+        {
+            Console.WriteLine("Thread 1");
+        }
+    }
+});
+
+Task.Run(() =>
+{
+    lock (lock2)
+    {
+        Thread.Sleep(100);
+
+        lock (lock1)
+        {
+            Console.WriteLine("Thread 2");
+        }
+    }
+});
+```
+
+### What happens?
+
+**Thread 1**
+
+```text
+Locks lock1
+       │
+Waiting for lock2
+```
+
+**Thread 2**
+
+```text
+Locks lock2
+       │
+Waiting for lock1
+```
+
+Now:
+
+```text
+Thread1 → Waiting for Thread2
+
+Thread2 → Waiting for Thread1
+```
+
+Application hangs forever.
+
+---
+
+# Why Does Deadlock Occur?
+
+Deadlocks typically occur when these conditions are met:
+
+1. **Mutual Exclusion** – A resource can be used by only one thread at a time.
+2. **Hold and Wait** – A thread holds one resource while waiting for another.
+3. **No Preemption** – Resources can't be forcibly taken away.
+4. **Circular Wait** – Threads wait on each other in a cycle.
+
+If all four conditions exist, a deadlock can occur.
+
+---
+
+# How to Avoid Deadlocks
+
+## 1. Acquire Locks in the Same Order ✅ (Most Common)
+
+Always lock resources in the same sequence.
+
+```csharp
+lock (lock1)
+{
+    lock (lock2)
+    {
+        // Safe
+    }
+}
+```
+
+Every thread should follow the same order:
+
+```text
+lock1
+   ↓
+lock2
+```
+
+Never reverse the order.
+
+---
+
+## 2. Keep Lock Scope Small
+
+❌ Bad
+
+```csharp
+lock (_lock)
+{
+    Thread.Sleep(5000);
+}
+```
+
+Holding a lock for a long time increases the chance of deadlocks.
+
+✔ Better
+
+```csharp
+lock (_lock)
+{
+    counter++;
+}
+```
+
+Lock only the critical section.
+
+---
+
+## 3. Avoid Nested Locks
+
+Instead of:
+
+```text
+lock A
+   ↓
+lock B
+```
+
+Try to redesign the code to use a single lock or minimize nesting.
+
+---
+
+## 4. Use `SemaphoreSlim` for Asynchronous Code
+
+Avoid using `lock` with `await`.
+
+Use `SemaphoreSlim` instead.
+
+```csharp
+private readonly SemaphoreSlim _semaphore = new(1, 1);
+
+await _semaphore.WaitAsync();
+
+try
+{
+    // Critical section
+}
+finally
+{
+    _semaphore.Release();
+}
+```
+
+---
+
+## 5. Don't Block on Async Code (`.Result` / `.Wait()`)
+
+One of the most common deadlocks in .NET occurs when blocking on asynchronous methods.
+
+❌ Bad
+
+```csharp
+var result = GetDataAsync().Result;
+```
+
+or
+
+```csharp
+GetDataAsync().Wait();
+```
+
+If `GetDataAsync()` tries to resume on the same thread that's blocked, both wait forever.
+
+✔ Good
+
+```csharp
+var result = await GetDataAsync();
+```
+
+Always prefer `await`.
+
+---
+
+# Example
+
+### Wrong
+
+```csharp
+public IActionResult Get()
+{
+    var data = _service.GetDataAsync().Result;
+
+    return Ok(data);
+}
+```
+
+### Correct
+
+```csharp
+public async Task<IActionResult> Get()
+{
+    var data = await _service.GetDataAsync();
+
+    return Ok(data);
+}
+```
+
+---
+
+# Interview Questions
+
+### **Q: Can `async/await` cause deadlocks?**
+
+**Not by itself.**
+
+Deadlocks usually happen when asynchronous code is **blocked synchronously** using `.Result` or `.Wait()`, especially in applications with a synchronization context (such as older ASP.NET or desktop UI apps).
+
+---
+
+### **Q: Does ASP.NET Core suffer from the classic `.Result` deadlock?**
+
+ASP.NET Core **doesn't have a `SynchronizationContext`**, so the classic deadlock pattern is much less common. However:
+
+* Using `.Result` or `.Wait()` is still **bad practice**.
+* It blocks a ThreadPool thread, reducing scalability.
+* It can still contribute to thread starvation or deadlocks in more complex locking scenarios.
+
+You should still use `await`.
+
+---
+
+# Real-World Example
+
+Suppose two services update two databases.
+
+**Service A**
+
+```text
+Lock Database A
+      ↓
+Wait for Database B
+```
+
+**Service B**
+
+```text
+Lock Database B
+      ↓
+Wait for Database A
+```
+
+Both wait forever.
+
+Solution:
+
+```text
+Always lock Database A first
+
+↓
+
+Then Database B
+```
+
+---
+
+# Interview One-Liner
+
+> **A deadlock occurs when two or more threads wait indefinitely for resources held by each other. It can be avoided by acquiring locks in a consistent order, minimizing lock duration, avoiding unnecessary nested locks, using `SemaphoreSlim` for asynchronous code, and avoiding blocking asynchronous methods with `.Result` or `.Wait()`.**
+
+---
+
+# Quick Revision
+
+| Cause                                  | Solution                              |
+| -------------------------------------- | ------------------------------------- |
+| Different lock order                   | Lock resources in the same order      |
+| Long lock duration                     | Keep critical sections small          |
+| Nested locks                           | Reduce or redesign locking            |
+| `.Result` / `.Wait()` on async methods | Use `await`                           |
+| Async synchronization                  | Use `SemaphoreSlim` instead of `lock` |
+
+### **Memory Trick**
+
+Remember:
+
+**Deadlock = "I'm waiting for you, and you're waiting for me."**
+
+To avoid it:
+
+* ✅ Same lock order
+* ✅ Short locks
+* ✅ `await` instead of `.Result`
+* ✅ `SemaphoreSlim` for async code
+
