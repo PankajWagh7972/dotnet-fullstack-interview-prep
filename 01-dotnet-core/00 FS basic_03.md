@@ -483,3 +483,296 @@ Exception Filter executes only if an unhandled exception occurs.
 * **Action** → **Before & after business logic**
 * **Exception** → **Handle errors**
 * **Result** → **Modify the response before sending it**
+
+
+# 4. What is Model Binding in ASP.NET Core?
+
+## Definition
+
+**Model Binding** is the process by which **ASP.NET Core automatically maps data from an HTTP request to action method parameters or model objects.**
+
+Instead of manually reading values from the request, ASP.NET Core binds them automatically.
+
+---
+
+## Example
+
+### Request
+
+```http
+GET /api/users/10?name=Pankaj
+```
+
+### Controller
+
+```csharp
+[HttpGet("{id}")]
+public IActionResult GetUser(int id, string name)
+{
+    return Ok($"{id} - {name}");
+}
+```
+
+ASP.NET Core automatically binds:
+
+* `id = 10` (Route)
+* `name = "Pankaj"` (Query String)
+
+No manual parsing is required.
+
+---
+
+# How Model Binding Works
+
+```text
+HTTP Request
+      │
+      ▼
+Route Values
+Query String
+Form Data
+Request Body
+Headers
+      │
+      ▼
+Model Binder
+      │
+      ▼
+C# Parameters / Model Object
+      │
+      ▼
+Controller Action
+```
+
+---
+
+# Sources of Model Binding
+
+| Attribute          | Data Source             | Example                |
+| ------------------ | ----------------------- | ---------------------- |
+| **[FromRoute]**    | Route values            | `/users/10`            |
+| **[FromQuery]**    | Query string            | `?name=Pankaj`         |
+| **[FromBody]**     | Request body (JSON/XML) | POST request           |
+| **[FromForm]**     | Form data               | HTML form              |
+| **[FromHeader]**   | HTTP headers            | Authorization, API Key |
+| **[FromServices]** | Dependency Injection    | Inject a service       |
+
+---
+
+# Examples
+
+## 1. From Route
+
+```csharp
+[HttpGet("{id}")]
+public IActionResult Get([FromRoute] int id)
+{
+    return Ok(id);
+}
+```
+
+Request
+
+```http
+GET /users/10
+```
+
+Output
+
+```text
+10
+```
+
+---
+
+## 2. From Query
+
+```csharp
+[HttpGet]
+public IActionResult Search([FromQuery] string name)
+{
+    return Ok(name);
+}
+```
+
+Request
+
+```http
+GET /users?name=Pankaj
+```
+
+Output
+
+```text
+Pankaj
+```
+
+---
+
+## 3. From Body
+
+Request Body
+
+```json
+{
+    "name":"Pankaj",
+    "age":28
+}
+```
+
+Controller
+
+```csharp
+public class User
+{
+    public string Name { get; set; }
+    public int Age { get; set; }
+}
+
+[HttpPost]
+public IActionResult Create([FromBody] User user)
+{
+    return Ok(user);
+}
+```
+
+The JSON is automatically converted into a `User` object.
+
+---
+
+## 4. From Form
+
+```csharp
+[HttpPost]
+public IActionResult Save([FromForm] User user)
+{
+    return Ok(user);
+}
+```
+
+Used for HTML form submissions and file uploads.
+
+---
+
+## 5. From Header
+
+```csharp
+[HttpGet]
+public IActionResult Get([FromHeader] string apiKey)
+{
+    return Ok(apiKey);
+}
+```
+
+Header
+
+```http
+apiKey: 12345
+```
+
+---
+
+# Complex Model Binding
+
+Instead of multiple parameters:
+
+```csharp
+public IActionResult Save(string name, int age)
+```
+
+Use a model:
+
+```csharp
+public class User
+{
+    public string Name { get; set; }
+    public int Age { get; set; }
+}
+
+public IActionResult Save(User user)
+```
+
+ASP.NET Core automatically fills the object from the request.
+
+---
+
+# Model Validation with Model Binding
+
+```csharp
+public class User
+{
+    [Required]
+    public string Name { get; set; }
+
+    [Range(18,60)]
+    public int Age { get; set; }
+}
+```
+
+Controller
+
+```csharp
+[HttpPost]
+public IActionResult Create(User user)
+{
+    if (!ModelState.IsValid)
+        return BadRequest(ModelState);
+
+    return Ok(user);
+}
+```
+
+The model is **bound first**, then **validated**.
+
+---
+
+# Real-World Example
+
+Request
+
+```http
+POST /api/employees
+```
+
+Body
+
+```json
+{
+    "name":"John",
+    "salary":50000
+}
+```
+
+Controller
+
+```csharp
+[HttpPost]
+public IActionResult AddEmployee(Employee employee)
+{
+    // employee.Name = John
+    // employee.Salary = 50000
+
+    return Ok(employee);
+}
+```
+
+The framework automatically converts the JSON into an `Employee` object.
+
+---
+
+# Interview One-Liner
+
+> **Model Binding is the ASP.NET Core feature that automatically maps data from an HTTP request (route values, query string, form data, headers, or request body) to action method parameters or model objects, reducing manual parsing and simplifying controller code.**
+
+---
+
+# Quick Revision
+
+* **Purpose:** Convert HTTP request data into C# objects.
+* **Data Sources:** Route, Query String, Body, Form, Headers, Services.
+* **Works for:** Primitive types and complex models.
+* **Benefit:** Less boilerplate code, automatic conversion, and integration with model validation.
+
+### **Memory Trick**
+
+**RQBFHS** → **R**oute, **Q**uery, **B**ody, **F**orm, **H**eader, **S**ervices.
