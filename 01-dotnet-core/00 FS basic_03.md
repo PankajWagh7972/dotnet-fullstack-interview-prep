@@ -1934,3 +1934,352 @@ Instead of:
 Use:
 
 **`IHttpClientFactory.CreateClient()` ✅**
+
+
+# How does .NET handle Multithreading and Concurrency?
+
+## Definition
+
+* **Multithreading** is the ability to execute multiple threads simultaneously within a process.
+* **Concurrency** is the ability to manage multiple tasks that make progress independently, even if they don't all run at the exact same time.
+
+.NET provides built-in libraries like **Thread**, **ThreadPool**, **Task Parallel Library (TPL)**, and **async/await** to efficiently handle multithreading and concurrency.
+
+> **Interview Definition:**
+> **.NET handles multithreading and concurrency using Threads, the ThreadPool, the Task Parallel Library (TPL), and async/await, enabling efficient execution of CPU-bound and I/O-bound operations while managing thread synchronization and resource sharing.**
+
+---
+
+# Thread vs Task
+
+| Thread              | Task                       |
+| ------------------- | -------------------------- |
+| Actual OS thread    | Higher-level abstraction   |
+| Expensive to create | Lightweight                |
+| Manual management   | Managed by .NET ThreadPool |
+| Less preferred      | Recommended                |
+
+---
+
+# Ways to Handle Multithreading in .NET
+
+## 1. Thread
+
+Creates a dedicated thread.
+
+```csharp
+Thread thread = new Thread(() =>
+{
+    Console.WriteLine("Running on another thread");
+});
+
+thread.Start();
+```
+
+### Use Case
+
+* Rarely used today.
+* Full control over thread lifecycle.
+
+---
+
+## 2. ThreadPool
+
+Reuses threads instead of creating new ones.
+
+```csharp
+ThreadPool.QueueUserWorkItem(_ =>
+{
+    Console.WriteLine("Running from ThreadPool");
+});
+```
+
+### Benefits
+
+* Faster
+* Better performance
+* Reduces thread creation overhead
+
+---
+
+## 3. Task (TPL) ⭐ Recommended
+
+Represents an asynchronous operation.
+
+```csharp
+Task.Run(() =>
+{
+    Console.WriteLine("Task Running");
+});
+```
+
+### Benefits
+
+* Easier to use
+* Uses ThreadPool internally
+* Supports cancellation and continuations
+
+---
+
+## 4. async / await (For I/O-bound Work)
+
+```csharp
+public async Task<string> GetDataAsync()
+{
+    await Task.Delay(1000);
+
+    return "Completed";
+}
+```
+
+### Use Case
+
+* API calls
+* Database queries
+* File operations
+* Network requests
+
+**Note:** `async/await` doesn't create a new thread by itself. It allows the current thread to be released while waiting for I/O.
+
+---
+
+# CPU-bound vs I/O-bound
+
+| CPU-bound          | I/O-bound         |
+| ------------------ | ----------------- |
+| Heavy calculations | API Calls         |
+| Image processing   | Database          |
+| Encryption         | File Read/Write   |
+| Use `Task.Run()`   | Use `async/await` |
+
+---
+
+# Running Multiple Tasks Concurrently
+
+```csharp
+var task1 = Task.Delay(1000);
+var task2 = Task.Delay(2000);
+
+await Task.WhenAll(task1, task2);
+```
+
+Both tasks run concurrently, and execution continues after **both** complete.
+
+---
+
+# Synchronization (Avoiding Race Conditions)
+
+When multiple threads access shared data, synchronization is required.
+
+## `lock`
+
+```csharp
+private readonly object _lock = new();
+
+lock (_lock)
+{
+    counter++;
+}
+```
+
+Only one thread can execute the locked block at a time.
+
+---
+
+## `SemaphoreSlim`
+
+Limits the number of concurrent operations.
+
+```csharp
+SemaphoreSlim semaphore = new SemaphoreSlim(2);
+
+await semaphore.WaitAsync();
+
+try
+{
+    // Critical section
+}
+finally
+{
+    semaphore.Release();
+}
+```
+
+---
+
+## `Monitor`
+
+```csharp
+Monitor.Enter(_lock);
+
+try
+{
+    counter++;
+}
+finally
+{
+    Monitor.Exit(_lock);
+}
+```
+
+`lock` is a simpler syntax over `Monitor`.
+
+---
+
+## Concurrent Collections
+
+Instead of `List<T>`:
+
+```csharp
+ConcurrentDictionary<int, string>
+ConcurrentQueue<T>
+ConcurrentBag<T>
+ConcurrentStack<T>
+```
+
+These are thread-safe.
+
+---
+
+# Parallel Programming
+
+## `Parallel.For`
+
+```csharp
+Parallel.For(1, 5, i =>
+{
+    Console.WriteLine(i);
+});
+```
+
+Runs loop iterations in parallel.
+
+---
+
+## `Parallel.ForEach`
+
+```csharp
+Parallel.ForEach(numbers, number =>
+{
+    Console.WriteLine(number);
+});
+```
+
+Useful for CPU-intensive operations.
+
+---
+
+# Cancellation
+
+```csharp
+CancellationTokenSource cts = new();
+
+await Task.Run(() =>
+{
+    while (!cts.Token.IsCancellationRequested)
+    {
+        // Work
+    }
+});
+```
+
+Allows graceful cancellation of long-running tasks.
+
+---
+
+# Real-World Examples
+
+### API Calls (I/O-bound)
+
+```csharp
+public async Task<Product> GetProduct()
+{
+    return await _httpClient.GetFromJsonAsync<Product>("products/1");
+}
+```
+
+---
+
+### Image Processing (CPU-bound)
+
+```csharp
+await Task.Run(() =>
+{
+    ProcessLargeImage();
+});
+```
+
+---
+
+### Parallel Processing
+
+```csharp
+await Task.WhenAll(
+    SendEmailAsync(),
+    GenerateInvoiceAsync(),
+    UpdateInventoryAsync()
+);
+```
+
+All three operations execute concurrently.
+
+---
+
+# Common Interview Questions
+
+### **Q: What is the difference between Multithreading and Concurrency?**
+
+* **Multithreading** → Multiple threads execute within a process.
+* **Concurrency** → Multiple tasks make progress independently (they may or may not run simultaneously).
+
+---
+
+### **Q: Should we use `Thread` or `Task`?**
+
+Use **`Task`** in most modern applications because it is easier to use, integrates with the ThreadPool, and supports async programming.
+
+---
+
+### **Q: Does `async/await` create a new thread?**
+
+**No.** It doesn't create a new thread by itself. It enables non-blocking asynchronous execution, primarily for I/O-bound operations.
+
+---
+
+### **Q: When do you use `Task.Run()`?**
+
+Use `Task.Run()` to offload **CPU-bound** work from the current thread (e.g., heavy calculations). Don't use it just to wrap naturally asynchronous I/O operations.
+
+---
+
+# Interview One-Liner
+
+> **.NET handles multithreading and concurrency using Threads, the ThreadPool, the Task Parallel Library (TPL), and async/await. `Task` is preferred over `Thread`, `async/await` is best for I/O-bound operations, `Task.Run()` is used for CPU-bound work, and synchronization mechanisms like `lock` and `SemaphoreSlim` help ensure thread safety.**
+
+---
+
+# Quick Revision
+
+| Feature                | Purpose                                     |
+| ---------------------- | ------------------------------------------- |
+| `Thread`               | Manual thread creation                      |
+| `ThreadPool`           | Reuse threads efficiently                   |
+| `Task`                 | Preferred abstraction for asynchronous work |
+| `async/await`          | Non-blocking I/O operations                 |
+| `Task.WhenAll()`       | Run multiple tasks concurrently             |
+| `lock`                 | Protect shared resources                    |
+| `SemaphoreSlim`        | Limit concurrent access                     |
+| `Parallel.For/ForEach` | Parallelize CPU-bound loops                 |
+| `CancellationToken`    | Cancel long-running operations              |
+
+### **Memory Trick**
+
+**TTPA-LSC**
+
+* **T**hread
+* **T**hreadPool
+* **P**L (`Task` / TPL)
+* **A**sync/Await
+* **L**ock
+* **S**emaphoreSlim
+* **C**ancellationToken
