@@ -1969,3 +1969,237 @@ React re-renders the component
 ```
 
 This clearly demonstrates that **`dispatch` never updates the state directly**. It simply sends an action, and the **reducer decides how the state should change**. This predictable flow is the main advantage of `useReducer`.
+
+
+For a **5+ years React interview**, don't just show `fetch()` inside `useEffect`. Explain **loading state**, **error handling**, **cleanup**, and **race condition prevention**.
+
+---
+
+# Example 1: Using `useEffect` + `fetch` (Most Common)
+
+```jsx
+import { useEffect, useState } from "react";
+
+function Users() {
+  const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    async function fetchUsers() {
+      try {
+        setLoading(true);
+
+        const response = await fetch(
+          "https://jsonplaceholder.typicode.com/users",
+          {
+            signal: controller.signal,
+          }
+        );
+
+        if (!response.ok) {
+          throw new Error("Failed to fetch users");
+        }
+
+        const data = await response.json();
+        setUsers(data);
+      } catch (err) {
+        // Ignore aborted requests
+        if (err.name !== "AbortError") {
+          setError(err.message);
+        }
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchUsers();
+
+    return () => {
+      controller.abort();
+    };
+  }, []);
+
+  if (loading) return <h2>Loading...</h2>;
+
+  if (error) return <h2>{error}</h2>;
+
+  return (
+    <div>
+      <h2>Users</h2>
+
+      {users.map((user) => (
+        <p key={user.id}>{user.name}</p>
+      ))}
+    </div>
+  );
+}
+
+export default Users;
+```
+
+---
+
+# Execution Flow
+
+```text
+Component Mounts
+       │
+       ▼
+useEffect Executes
+       │
+       ▼
+Loading = true
+       │
+       ▼
+API Call
+       │
+       ▼
+Success?
+   /         \
+ Yes         No
+  │           │
+setUsers    setError
+  │           │
+  └──────┬────┘
+         ▼
+Loading = false
+         ▼
+UI Updates
+```
+
+---
+
+# Why `AbortController`?
+
+Suppose the user navigates away before the API finishes.
+
+Without cleanup:
+
+```text
+Component Unmounted
+
+↓
+
+API Response Arrives
+
+↓
+
+setState()
+
+↓
+
+Warning / Memory Leak
+```
+
+With cleanup:
+
+```jsx
+return () => controller.abort();
+```
+
+The request is canceled, preventing state updates on an unmounted component.
+
+---
+
+# Example 2: Using Axios
+
+```jsx
+import axios from "axios";
+import { useEffect, useState } from "react";
+
+function Users() {
+  const [users, setUsers] = useState([]);
+
+  useEffect(() => {
+    async function loadUsers() {
+      try {
+        const response = await axios.get(
+          "https://jsonplaceholder.typicode.com/users"
+        );
+
+        setUsers(response.data);
+      } catch (err) {
+        console.log(err);
+      }
+    }
+
+    loadUsers();
+  }, []);
+
+  return (
+    <>
+      {users.map((user) => (
+        <p key={user.id}>{user.name}</p>
+      ))}
+    </>
+  );
+}
+```
+
+---
+
+# Real-Time Example: Employee Management System
+
+```text
+Employee Page
+
+↓
+
+Loading Spinner
+
+↓
+
+GET /api/employees
+
+↓
+
+Success
+
+↓
+
+Employee Table
+```
+
+```jsx
+useEffect(() => {
+    loadEmployees();
+}, []);
+```
+
+While loading:
+
+```jsx
+{loading && <Spinner />}
+```
+
+If error:
+
+```jsx
+{error && <ErrorMessage />}
+```
+
+Otherwise:
+
+```jsx
+<EmployeeTable employees={employees} />
+```
+
+---
+
+# Best Practices
+
+* Show a loading indicator while fetching data.
+* Handle API errors gracefully.
+* Cancel requests on component unmount (`AbortController` for `fetch`).
+* Use `async/await` for cleaner code.
+* Avoid unnecessary re-fetching by setting the correct dependency array.
+* For large applications, prefer libraries like **React Query (TanStack Query)** or **SWR** because they provide caching, background refetching, retries, and request deduplication.
+
+---
+
+# Interview Answer (5+ Years)
+
+> In React, asynchronous data is typically loaded inside `useEffect` using `async/await`. I maintain separate state for the fetched data, loading status, and errors using `useState`. While the request is in progress, I display a loading indicator. If the request succeeds, I update the data state; if it fails, I show an appropriate error message. I also clean up in-flight requests using `AbortController` (or cancellation mechanisms provided by the HTTP client) to prevent updating state after a component unmounts. In production applications, I often use libraries like **TanStack Query (React Query)** for features such as caching, automatic retries, and background data synchronization.
