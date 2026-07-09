@@ -776,3 +776,445 @@ The framework automatically converts the JSON into an `Employee` object.
 ### **Memory Trick**
 
 **RQBFHS** → **R**oute, **Q**uery, **B**ody, **F**orm, **H**eader, **S**ervices.
+
+
+# What is the Host in ASP.NET Core?
+
+## Definition
+
+The **Host** is the **main object responsible for starting and managing the ASP.NET Core application**.
+
+It is responsible for:
+
+* Creating the Dependency Injection (DI) container.
+* Loading configuration (`appsettings.json`, environment variables, etc.).
+* Configuring logging.
+* Starting the web server (Kestrel).
+* Managing the application lifetime (startup and shutdown).
+
+> **Simple Definition (Interview):**
+> **Host is the runtime environment that creates, configures, starts, and manages an ASP.NET Core application.**
+
+---
+
+# Program.cs (.NET 6/7/8 Minimal Hosting Model)
+
+```csharp
+var builder = WebApplication.CreateBuilder(args);
+
+// Register Services
+builder.Services.AddControllers();
+
+var app = builder.Build();
+
+// Configure Middleware
+app.UseHttpsRedirection();
+app.UseAuthorization();
+
+app.MapControllers();
+
+app.Run();
+```
+
+Let's understand each line.
+
+---
+
+# 1. WebApplication.CreateBuilder(args)
+
+```csharp
+var builder = WebApplication.CreateBuilder(args);
+```
+
+## What happens internally?
+
+This is the **Host Builder**.
+
+It automatically creates:
+
+* Host
+* Web Server (Kestrel)
+* Configuration
+* Dependency Injection Container
+* Logging
+* Environment
+* Default Services
+
+Internally it is similar to:
+
+```csharp
+Host.CreateDefaultBuilder(args)
+```
+
+---
+
+## It automatically loads
+
+```
+appsettings.json
+
+appsettings.Development.json
+
+Environment Variables
+
+Command Line Arguments
+
+User Secrets (Development)
+
+Logging
+
+Dependency Injection
+
+Kestrel Server
+```
+
+---
+
+# Builder contains
+
+```
+builder
+│
+├── Services
+├── Configuration
+├── Environment
+├── Logging
+├── Host
+└── WebHost
+```
+
+---
+
+# 2. builder.Services
+
+```csharp
+builder.Services.AddControllers();
+```
+
+This is the **Dependency Injection Container**.
+
+All services are registered here.
+
+Example
+
+```csharp
+builder.Services.AddControllers();
+
+builder.Services.AddDbContext<AppDbContext>();
+
+builder.Services.AddScoped<IEmployeeRepository, EmployeeRepository>();
+
+builder.Services.AddAuthentication();
+
+builder.Services.AddAuthorization();
+
+builder.Services.AddSwaggerGen();
+```
+
+Everything your application needs is registered here.
+
+---
+
+# 3. builder.Configuration
+
+Used to read configuration.
+
+```csharp
+string cs =
+builder.Configuration.GetConnectionString("DefaultConnection");
+```
+
+Reads from
+
+```
+appsettings.json
+
+Environment Variables
+
+Azure Key Vault
+
+Secrets
+
+etc.
+```
+
+---
+
+# 4. builder.Environment
+
+Gives current environment.
+
+```csharp
+if(builder.Environment.IsDevelopment())
+{
+    // Development code
+}
+```
+
+Possible values
+
+```
+Development
+
+Staging
+
+Production
+```
+
+---
+
+# 5. builder.Logging
+
+Configure logging.
+
+```csharp
+builder.Logging.ClearProviders();
+
+builder.Logging.AddConsole();
+
+builder.Logging.AddDebug();
+```
+
+---
+
+# 6. builder.Host
+
+Configure Host.
+
+Example
+
+```csharp
+builder.Host.ConfigureServices(...);
+
+builder.Host.ConfigureLogging(...);
+```
+
+Rarely modified in normal projects.
+
+---
+
+# 7. builder.WebHost
+
+Configure the web server.
+
+Example
+
+```csharp
+builder.WebHost.UseKestrel();
+```
+
+or
+
+```csharp
+builder.WebHost.ConfigureKestrel(options =>
+{
+    options.ListenAnyIP(5000);
+});
+```
+
+---
+
+# 8. builder.Build()
+
+```csharp
+var app = builder.Build();
+```
+
+Creates the application object.
+
+Now all services are ready.
+
+After Build()
+
+```
+Host Created
+
+DI Ready
+
+Configuration Ready
+
+Logging Ready
+
+Middleware Pipeline Ready
+```
+
+---
+
+# app object
+
+```
+app
+│
+├── Middleware
+├── Routing
+├── Endpoints
+├── Lifetime
+└── Run()
+```
+
+---
+
+# 9. Middleware Configuration
+
+Example
+
+```csharp
+app.UseHttpsRedirection();
+
+app.UseAuthentication();
+
+app.UseAuthorization();
+```
+
+Middleware executes one after another.
+
+Pipeline
+
+```
+Request
+
+↓
+
+Middleware1
+
+↓
+
+Middleware2
+
+↓
+
+Middleware3
+
+↓
+
+Controller
+
+↓
+
+Response
+```
+
+---
+
+# 10. app.MapControllers()
+
+```csharp
+app.MapControllers();
+```
+
+Maps all controller endpoints.
+
+Without this
+
+```
+/api/employees
+```
+
+will never reach the controller.
+
+---
+
+# 11. app.Run()
+
+```csharp
+app.Run();
+```
+
+Starts the application.
+
+Internally
+
+```
+Starts Kestrel
+
+Starts listening on Port
+
+Waits for HTTP Requests
+```
+
+Application keeps running until stopped.
+
+---
+
+# Overall Flow
+
+```
+Program.cs Starts
+
+↓
+
+Create Host
+
+↓
+
+Load Configuration
+
+↓
+
+Create DI Container
+
+↓
+
+Register Services
+
+↓
+
+Build Application
+
+↓
+
+Configure Middleware
+
+↓
+
+Map Endpoints
+
+↓
+
+Run Kestrel Server
+
+↓
+
+Wait for Requests
+```
+
+---
+
+# Common Objects in Program.cs
+
+| Object                  | Purpose                                                    |
+| ----------------------- | ---------------------------------------------------------- |
+| `builder`               | Creates and configures the Host                            |
+| `builder.Services`      | Register services for Dependency Injection                 |
+| `builder.Configuration` | Read configuration values                                  |
+| `builder.Environment`   | Get current environment (Development, Staging, Production) |
+| `builder.Logging`       | Configure logging providers                                |
+| `builder.Host`          | Configure the generic host                                 |
+| `builder.WebHost`       | Configure the web server (Kestrel, IIS integration)        |
+| `app`                   | Built application used to configure middleware             |
+| `app.Use...()`          | Add middleware to the request pipeline                     |
+| `app.MapControllers()`  | Map controller routes/endpoints                            |
+| `app.Run()`             | Start the web server and begin listening for requests      |
+
+---
+
+# Interview One-Liner
+
+> **`WebApplication.CreateBuilder(args)` creates the ASP.NET Core Host, which sets up configuration, dependency injection, logging, the web server (Kestrel), and the application environment. `builder.Services` registers services, `builder.Build()` creates the application, `app.Use...()` configures the middleware pipeline, `app.MapControllers()` maps endpoints, and `app.Run()` starts the server to handle incoming requests.**
+
+---
+
+# Memory Trick
+
+Remember the startup flow as:
+
+**Create → Register → Build → Configure → Map → Run**
+
+* **Create** → `WebApplication.CreateBuilder()`
+* **Register** → `builder.Services`
+* **Build** → `builder.Build()`
+* **Configure** → `app.Use...()`
+* **Map** → `app.MapControllers()`
+* **Run** → `app.Run()`
+
+This sequence is the lifecycle of every modern ASP.NET Core application startup.
