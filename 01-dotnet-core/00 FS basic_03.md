@@ -93,3 +93,131 @@ Console.WriteLine(((string)c).Length); // ✅
 * **`var`** → *Compile-time type inference, strongly typed.*
 * **`dynamic`** → *Runtime type resolution, bypasses compile-time type checking.*
 * **`object`** → *Base class of all C# types; requires casting to access specific members.*
+
+* # Difference Between Early Binding and Late Binding (C# Interview Notes)
+
+## Definition
+
+### Early Binding
+
+* Method call is resolved at **compile time**.
+* Compiler knows the object's type.
+* Faster and type-safe.
+
+### Late Binding
+
+* Method call is resolved at **runtime**.
+* Compiler doesn't know the object's type.
+* Slower and less type-safe.
+
+---
+
+## Comparison
+
+| Feature             | Early Binding | Late Binding    |
+| ------------------- | ------------- | --------------- |
+| Binding Time        | Compile Time  | Runtime         |
+| Type Checking       | Compile Time  | Runtime         |
+| Performance         | Faster        | Slower          |
+| IntelliSense        | ✅ Available   | ❌ Not Available |
+| Compile-Time Errors | ✅ Yes         | ❌ No            |
+| Runtime Errors      | Rare          | Possible        |
+
+---
+
+## Early Binding Example
+
+```csharp
+class Employee
+{
+    public void Display()
+    {
+        Console.WriteLine("Employee");
+    }
+}
+
+Employee emp = new Employee();
+emp.Display();
+```
+
+**Output**
+
+```
+Employee
+```
+
+✔ Compiler knows `Display()` exists.
+
+---
+
+## Late Binding Example (`dynamic`)
+
+```csharp
+dynamic emp = new Employee();
+emp.Display();
+```
+
+The compiler doesn't verify whether `Display()` exists.
+
+If you call a non-existing method:
+
+```csharp
+dynamic emp = new Employee();
+emp.Show();
+```
+
+✔ Compiles successfully.
+
+❌ At runtime:
+
+```
+RuntimeBinderException
+```
+
+---
+
+## Another Late Binding Example (Reflection)
+
+```csharp
+Type type = typeof(Employee);
+
+object obj = Activator.CreateInstance(type);
+
+type.GetMethod("Display").Invoke(obj, null);
+```
+
+The method is located and invoked at **runtime**.
+
+---
+
+## Real-World Uses
+
+### Early Binding
+
+* Normal C# applications
+* ASP.NET Core
+* Business logic
+* Most day-to-day development
+
+### Late Binding
+
+* Reflection
+* Plugin architectures
+* COM Interop (Excel, Word)
+* Dynamic JSON handling
+* Loading assemblies at runtime
+
+---
+
+## Memory Trick
+
+* **Early Binding** → **Compiler knows everything** (Fast & Safe)
+* **Late Binding** → **Runtime decides everything** (Flexible but Slower)
+
+---
+
+## Interview One-Liner
+
+> **Early Binding** resolves method calls at **compile time**, providing **better performance and compile-time type safety**.
+> **Late Binding** resolves method calls at **runtime**, offering **more flexibility** but with **runtime overhead and the possibility of runtime errors**.
+
