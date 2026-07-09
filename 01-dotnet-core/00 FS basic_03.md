@@ -1218,3 +1218,213 @@ Remember the startup flow as:
 * **Run** → `app.Run()`
 
 This sequence is the lifecycle of every modern ASP.NET Core application startup.
+
+
+What is IHttpContextAccessor used for?
+# What is `IHttpContextAccessor` in ASP.NET Core?
+
+## Definition
+
+`IHttpContextAccessor` is a service that provides access to the **current `HttpContext`** from classes where `HttpContext` is not directly available (such as services, repositories, or helper classes).
+
+> **Interview Definition:**
+> **`IHttpContextAccessor` is used to access the current HTTP request and response context outside of controllers or middleware.**
+
+---
+
+# Why do we need it?
+
+Inside a **Controller**, you can directly access:
+
+```csharp
+HttpContext
+```
+
+Example:
+
+```csharp
+public IActionResult Index()
+{
+    var user = HttpContext.User.Identity?.Name;
+    return Ok(user);
+}
+```
+
+But inside a **Service**, `HttpContext` is **not available**.
+
+```csharp
+public class UserService
+{
+    // ❌ HttpContext is not accessible here
+}
+```
+
+To access it, inject `IHttpContextAccessor`.
+
+---
+
+# Register the Service
+
+In `Program.cs`:
+
+```csharp
+builder.Services.AddHttpContextAccessor();
+```
+
+---
+
+# Example
+
+### Service
+
+```csharp
+public class UserService
+{
+    private readonly IHttpContextAccessor _httpContextAccessor;
+
+    public UserService(IHttpContextAccessor httpContextAccessor)
+    {
+        _httpContextAccessor = httpContextAccessor;
+    }
+
+    public string GetUserName()
+    {
+        return _httpContextAccessor.HttpContext?.User?.Identity?.Name;
+    }
+}
+```
+
+---
+
+### Controller
+
+```csharp
+public class UserController : Controller
+{
+    private readonly UserService _userService;
+
+    public UserController(UserService userService)
+    {
+        _userService = userService;
+    }
+
+    public IActionResult Profile()
+    {
+        return Ok(_userService.GetUserName());
+    }
+}
+```
+
+---
+
+# What can you access using `HttpContext`?
+
+```csharp
+var context = _httpContextAccessor.HttpContext;
+```
+
+| Property          | Description                    |
+| ----------------- | ------------------------------ |
+| `User`            | Logged-in user information     |
+| `Request`         | HTTP request details           |
+| `Response`        | HTTP response                  |
+| `Session`         | Session data                   |
+| `Request.Headers` | Request headers                |
+| `Request.Cookies` | Cookies                        |
+| `Connection`      | Client IP, Port                |
+| `Items`           | Data shared during the request |
+
+---
+
+# Real-World Use Cases
+
+### 1. Get Logged-in User
+
+```csharp
+var userName = _httpContextAccessor.HttpContext?.User?.Identity?.Name;
+```
+
+---
+
+### 2. Get User ID from JWT Claims
+
+```csharp
+var userId = _httpContextAccessor.HttpContext?
+    .User?
+    .FindFirst("sub")?
+    .Value;
+```
+
+---
+
+### 3. Get Client IP Address
+
+```csharp
+var ip = _httpContextAccessor.HttpContext?
+    .Connection
+    .RemoteIpAddress?
+    .ToString();
+```
+
+---
+
+### 4. Read Request Header
+
+```csharp
+var apiKey = _httpContextAccessor.HttpContext?
+    .Request
+    .Headers["ApiKey"];
+```
+
+---
+
+### 5. Read Session Value
+
+```csharp
+var user = _httpContextAccessor.HttpContext?
+    .Session
+    .GetString("UserName");
+```
+
+---
+
+# When should you use it?
+
+✅ Good use cases:
+
+* Audit logging (Current User ID)
+* Multi-tenant applications (Tenant ID from headers/claims)
+* Reading JWT claims in services
+* Accessing request headers or client IP in business services
+
+❌ Avoid:
+
+* Passing `HttpContext` deep into repositories or domain models.
+* Overusing it when the required data (e.g., User ID) can be passed as a method parameter.
+
+---
+
+# Interview Question
+
+### **Q: Why not use `HttpContext` directly in a service?**
+
+**Answer:**
+Because `HttpContext` is only directly available in controllers, Razor Pages, and middleware. Services are independent of the HTTP pipeline, so `IHttpContextAccessor` is used to access the current `HttpContext` through dependency injection.
+
+---
+
+# Interview One-Liner
+
+> **`IHttpContextAccessor` is a service that provides access to the current `HttpContext` in classes where `HttpContext` isn't directly available, such as services or helper classes. It is commonly used to access the current user, request headers, session, cookies, or client IP.**
+
+---
+
+# Quick Revision
+
+| Feature       | `IHttpContextAccessor`                                                 |
+| ------------- | ---------------------------------------------------------------------- |
+| Purpose       | Access current `HttpContext` outside controllers                       |
+| Registration  | `builder.Services.AddHttpContextAccessor();`                           |
+| Common Uses   | User claims, headers, session, cookies, IP address                     |
+| Access Method | `_httpContextAccessor.HttpContext`                                     |
+| Interview Tip | Use it sparingly; prefer passing only the required data when possible. |
