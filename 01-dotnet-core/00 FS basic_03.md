@@ -2764,3 +2764,216 @@ You can answer:
 This explanation is suitable for **5+ years of .NET interviews**.
 
 If you're preparing for senior .NET interviews, the next topic to understand is **how `async/await` works internally (state machine, SynchronizationContext, ConfigureAwait, and why deadlocks happen)**, which is one of the most frequently asked advanced interview topics.
+
+This is an excellent question. This is where many developers misuse `Task.Run()`.
+
+## Scenario
+
+Suppose you need to call two independent APIs:
+
+* Customer API
+* Order API
+
+Both should run **at the same time**.
+
+### ❌ Should you use `Task.Run()`?
+
+**No.**
+
+Because calling an API is an **I/O-bound** operation, not a CPU-bound operation.
+
+Using `Task.Run()` here only wastes a ThreadPool thread.
+
+---
+
+## ✅ Correct Way: Start Both Tasks and Await Them Together
+
+```csharp
+public async Task<IActionResult> GetDashboard()
+{
+    Task<Customer> customerTask = _customerService.GetCustomerAsync();
+    Task<List<Order>> orderTask = _orderService.GetOrdersAsync();
+
+    await Task.WhenAll(customerTask, orderTask);
+
+    Customer customer = await customerTask;
+    List<Order> orders = await orderTask;
+
+    return Ok(new
+    {
+        customer,
+        orders
+    });
+}
+```
+
+### What happens internally?
+
+```
+Request comes
+      │
+      ▼
+Start Customer API Call
+      │
+Start Order API Call
+      │
+      ▼
+Both APIs are running concurrently
+      │
+      ▼
+Current thread is FREE while waiting
+      │
+      ▼
+Both responses arrive
+      │
+      ▼
+Continue execution
+```
+
+Notice that **no extra thread is created** just because two API calls are in progress.
+
+---
+
+## ❌ Wrong Way
+
+```csharp
+var customer = await _customerService.GetCustomerAsync();
+var orders = await _orderService.GetOrdersAsync();
+```
+
+Execution:
+
+```
+Call Customer API
+      │
+Wait
+      │
+Response received
+      │
+Call Order API
+      │
+Wait
+      │
+Response received
+```
+
+Total time:
+
+```
+Customer API = 2 sec
+Order API = 3 sec
+
+Total = 5 sec
+```
+
+---
+
+## ✅ Concurrent Way
+
+```csharp
+var customerTask = _customerService.GetCustomerAsync();
+var orderTask = _orderService.GetOrdersAsync();
+
+await Task.WhenAll(customerTask, orderTask);
+```
+
+Execution:
+
+```
+Customer API  ----2 sec----
+Order API     -------3 sec-------
+
+Total ≈ 3 sec
+```
+
+Because both requests started immediately.
+
+---
+
+# When should I use `Task.Run()`?
+
+Suppose after getting the API response, you need to generate a large PDF.
+
+```csharp
+public async Task<IActionResult> DownloadReport()
+{
+    var data = await _api.GetDataAsync();
+
+    var pdf = await Task.Run(() =>
+    {
+        return GenerateLargePdf(data);
+    });
+
+    return File(pdf, "application/pdf");
+}
+```
+
+Here:
+
+* API call → **I/O-bound** → `await`
+* PDF generation → **CPU-bound** → `Task.Run()`
+
+This is an appropriate use of `Task.Run()`.
+
+---
+
+# Interview Question
+
+### **Can we use `Task.WhenAll()` for API calls?**
+
+**Yes.** It's the recommended approach when the operations are independent.
+
+```csharp
+var task1 = _service1.GetAsync();
+var task2 = _service2.GetAsync();
+
+await Task.WhenAll(task1, task2);
+```
+
+---
+
+### **Should we wrap API calls inside `Task.Run()`?**
+
+**No.**
+
+```csharp
+// ❌ Don't do this
+await Task.Run(() => _httpClient.GetAsync(url));
+```
+
+Why?
+
+* `HttpClient.GetAsync()` is already asynchronous.
+* `Task.Run()` only adds unnecessary scheduling overhead.
+* It doesn't make the API call faster.
+
+---
+
+# Rule to Remember
+
+| Scenario           | Use              |
+| ------------------ | ---------------- |
+| Database call      | `await`          |
+| API call           | `await`          |
+| File I/O           | `await`          |
+| HTTP call          | `await`          |
+| Multiple API calls | `Task.WhenAll()` |
+| Image processing   | `Task.Run()`     |
+| PDF generation     | `Task.Run()`     |
+| Encryption         | `Task.Run()`     |
+| Heavy calculations | `Task.Run()`     |
+
+---
+
+## Easy Memory Trick
+
+Ask yourself:
+
+> **"Is the computer waiting, or is the computer working?"**
+
+* **Waiting** (API, DB, File, Network) → **`async/await` + `Task.WhenAll()` if multiple**
+* **Working** (calculation, compression, image processing, PDF generation) → **`Task.Run()`**
+
+### Interview One-Liner
+
+> **For multiple independent API calls, I start both asynchronous operations and use `Task.WhenAll()` to await them concurrently. I do not use `Task.Run()` because HTTP calls are I/O-bound and are already asynchronous. `Task.Run()` is intended for CPU-bound work, not for wrapping asynchronous I/O operations.**
