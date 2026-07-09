@@ -1365,3 +1365,607 @@ It only keeps the function reference stable. The parent still re-renders when it
 # Interview Answer (5+ Years)
 
 > `useCallback` is a React Hook that memoizes a function and returns the same function reference across renders unless its dependencies change. Its primary purpose is to prevent unnecessary re-renders of memoized child components (`React.memo`) and to provide stable callback references when used as dependencies in other hooks like `useEffect` or `useMemo`. A common real-world use case is passing event handlers such as `onDelete`, `onEdit`, or `onAddToCart` to large lists or tables. However, `useCallback` should be used only when it provides a measurable performance benefit, as overusing it can make code more complex without improving performance.
+
+
+This is a common React interview question for **5+ years of experience**. Interviewers usually expect you to know **what `useReducer` is, how it works internally, why it exists, and when it is a better choice than `useState`**.
+
+---
+
+# What is `useReducer`?
+
+`useReducer` is a React Hook used to manage **complex state logic**. Instead of updating state directly, you **dispatch actions** to a **reducer function**, which calculates and returns the next state.
+
+It follows the same concept as Redux, but it's built into React and is intended for component-level or local state management.
+
+### Syntax
+
+```jsx
+const [state, dispatch] = useReducer(reducer, initialState);
+```
+
+* **state** → Current state
+* **dispatch** → Function used to send actions
+* **reducer** → Function that determines how state changes
+* **initialState** → Initial value of the state
+
+---
+
+# How It Works
+
+```text
+User Clicks Button
+
+↓
+
+dispatch({ type: "increment" })
+
+↓
+
+Reducer Receives Current State + Action
+
+↓
+
+Reducer Returns New State
+
+↓
+
+React Updates UI
+```
+
+Unlike `useState`, where you directly set the value, `useReducer` centralizes update logic in one place.
+
+---
+
+# Basic Example
+
+```jsx
+import { useReducer } from "react";
+
+const initialState = { count: 0 };
+
+function reducer(state, action) {
+    switch (action.type) {
+        case "increment":
+            return { count: state.count + 1 };
+
+        case "decrement":
+            return { count: state.count - 1 };
+
+        case "reset":
+            return initialState;
+
+        default:
+            return state;
+    }
+}
+
+export default function Counter() {
+    const [state, dispatch] = useReducer(reducer, initialState);
+
+    return (
+        <>
+            <h1>{state.count}</h1>
+
+            <button onClick={() => dispatch({ type: "increment" })}>
+                +
+            </button>
+
+            <button onClick={() => dispatch({ type: "decrement" })}>
+                -
+            </button>
+
+            <button onClick={() => dispatch({ type: "reset" })}>
+                Reset
+            </button>
+        </>
+    );
+}
+```
+
+---
+
+# How `useState` Would Look
+
+```jsx
+const [count, setCount] = useState(0);
+
+const increment = () => setCount(count + 1);
+const decrement = () => setCount(count - 1);
+const reset = () => setCount(0);
+```
+
+This is simple and perfectly fine for small state.
+
+---
+
+# Why `useReducer`?
+
+Imagine a form with multiple fields:
+
+```text
+Employee Form
+
+Name
+
+Email
+
+Department
+
+Salary
+
+Address
+
+Skills
+
+Experience
+
+Validation Errors
+
+Loading
+
+Success
+```
+
+With `useState`:
+
+```jsx
+const [name, setName] = useState("");
+const [email, setEmail] = useState("");
+const [department, setDepartment] = useState("");
+const [salary, setSalary] = useState(0);
+const [errors, setErrors] = useState({});
+const [loading, setLoading] = useState(false);
+const [success, setSuccess] = useState(false);
+```
+
+Managing many related pieces of state becomes harder.
+
+With `useReducer`:
+
+```jsx
+const initialState = {
+    name: "",
+    email: "",
+    department: "",
+    salary: 0,
+    errors: {},
+    loading: false,
+    success: false
+};
+```
+
+One reducer can handle all updates in a predictable way.
+
+---
+
+# Real-Time Use Cases
+
+## 1. Complex Forms
+
+```text
+Registration Form
+
+↓
+
+User Types
+
+↓
+
+dispatch({ type: "UPDATE_NAME", payload: "Pankaj" })
+
+↓
+
+Reducer Updates State
+
+↓
+
+UI Re-renders
+```
+
+Benefits:
+
+* All update logic is centralized.
+* Easier to validate and reset the form.
+* Simpler to maintain as the form grows.
+
+---
+
+## 2. Shopping Cart
+
+State:
+
+```jsx
+{
+    items: [],
+    total: 0,
+    discount: 0
+}
+```
+
+Actions:
+
+```text
+ADD_ITEM
+
+REMOVE_ITEM
+
+UPDATE_QUANTITY
+
+CLEAR_CART
+
+APPLY_DISCOUNT
+```
+
+Reducer:
+
+```jsx
+switch(action.type){
+    case "ADD_ITEM":
+    case "REMOVE_ITEM":
+    case "UPDATE_QUANTITY":
+}
+```
+
+Instead of spreading logic across many `setState` calls, everything is handled in one place.
+
+---
+
+## 3. Authentication
+
+```text
+Login
+
+↓
+
+Loading
+
+↓
+
+Success
+
+↓
+
+User Info
+
+↓
+
+Error
+```
+
+State:
+
+```jsx
+{
+    user: null,
+    loading: false,
+    error: null,
+    isAuthenticated: false
+}
+```
+
+Actions:
+
+```text
+LOGIN_REQUEST
+
+LOGIN_SUCCESS
+
+LOGIN_FAILURE
+
+LOGOUT
+```
+
+This approach makes authentication state transitions clear and easy to test.
+
+---
+
+## 4. Multi-Step Wizard
+
+```text
+Step 1
+
+↓
+
+Step 2
+
+↓
+
+Step 3
+
+↓
+
+Submit
+```
+
+Actions:
+
+```text
+NEXT_STEP
+
+PREVIOUS_STEP
+
+RESET
+
+UPDATE_FORM
+```
+
+A reducer keeps the navigation and form updates organized.
+
+---
+
+# `useState` vs `useReducer`
+
+| `useState`                        | `useReducer`                       |
+| --------------------------------- | ---------------------------------- |
+| Best for simple state             | Best for complex state             |
+| Direct state updates              | State changes go through a reducer |
+| Easy to learn                     | Better for complex business logic  |
+| Good for a few state variables    | Good for many related state values |
+| Update logic can become scattered | Update logic is centralized        |
+
+---
+
+# Can `useReducer` Replace Redux?
+
+Not completely.
+
+`useReducer` manages **local component state**.
+
+Redux manages **global application state** shared across many unrelated components.
+
+A common pattern is to combine `useReducer` with the Context API for medium-sized applications, but Redux (or similar libraries) is still useful for large applications with advanced global state needs.
+
+---
+
+# When Should You Use `useReducer`?
+
+Use it when:
+
+* State has multiple related values.
+* State transitions depend on the previous state.
+* You have many different update actions.
+* Business logic becomes difficult to manage with multiple `useState` calls.
+* You want predictable, centralized update logic.
+
+Avoid it for simple state like:
+
+```jsx
+const [count, setCount] = useState(0);
+```
+
+Using `useReducer` there would add unnecessary complexity.
+
+---
+
+# Interview Answer (5+ Years)
+
+> `useReducer` is a React Hook used to manage complex state logic by centralizing state updates in a reducer function. Instead of updating state directly, components dispatch actions, and the reducer returns the next state based on the current state and the action. It's particularly useful for forms with many fields, shopping carts, authentication flows, and multi-step wizards where state transitions are interconnected. Compared to `useState`, `useReducer` improves maintainability and makes state changes more predictable by keeping update logic in a single place.
+
+
+Here's a **complete, interview-friendly example** of `useReducer`. This is the type of example you can easily explain in an interview because it demonstrates multiple actions (`Increment`, `Decrement`, `Reset`) and clearly shows the flow of `dispatch → reducer → state`.
+
+## Complete Example
+
+```jsx
+import React, { useReducer } from "react";
+
+// Initial state
+const initialState = {
+  count: 0,
+};
+
+// Reducer function
+function counterReducer(state, action) {
+  switch (action.type) {
+    case "INCREMENT":
+      return {
+        ...state,
+        count: state.count + 1,
+      };
+
+    case "DECREMENT":
+      return {
+        ...state,
+        count: state.count - 1,
+      };
+
+    case "RESET":
+      return initialState;
+
+    default:
+      return state;
+  }
+}
+
+function Counter() {
+  // useReducer Hook
+  const [state, dispatch] = useReducer(counterReducer, initialState);
+
+  return (
+    <div style={{ textAlign: "center", marginTop: "50px" }}>
+      <h1>Counter using useReducer</h1>
+
+      <h2>{state.count}</h2>
+
+      <button
+        onClick={() => dispatch({ type: "INCREMENT" })}
+      >
+        Increment
+      </button>
+
+      <button
+        onClick={() => dispatch({ type: "DECREMENT" })}
+        style={{ marginLeft: "10px" }}
+      >
+        Decrement
+      </button>
+
+      <button
+        onClick={() => dispatch({ type: "RESET" })}
+        style={{ marginLeft: "10px" }}
+      >
+        Reset
+      </button>
+    </div>
+  );
+}
+
+export default Counter;
+```
+
+---
+
+# How It Works
+
+### 1. Initial State
+
+```jsx
+const initialState = {
+  count: 0,
+};
+```
+
+This is the starting state.
+
+---
+
+### 2. Reducer Function
+
+```jsx
+function counterReducer(state, action) {
+```
+
+The reducer always receives:
+
+* **Current state**
+* **Action object**
+
+Example action:
+
+```jsx
+{
+  type: "INCREMENT"
+}
+```
+
+---
+
+### 3. Dispatch Action
+
+```jsx
+dispatch({ type: "INCREMENT" });
+```
+
+`dispatch` sends an action to the reducer.
+
+---
+
+### 4. Reducer Executes
+
+```jsx
+case "INCREMENT":
+    return {
+        ...state,
+        count: state.count + 1
+    };
+```
+
+React updates the state with the returned object.
+
+---
+
+### 5. Component Re-renders
+
+```jsx
+<h2>{state.count}</h2>
+```
+
+The updated count is displayed automatically.
+
+---
+
+# Flow Diagram
+
+```text
+User Clicks "Increment"
+          │
+          ▼
+dispatch({ type: "INCREMENT" })
+          │
+          ▼
+counterReducer(state, action)
+          │
+          ▼
+Returns New State
+{ count: 1 }
+          │
+          ▼
+React Updates State
+          │
+          ▼
+Component Re-renders
+```
+
+---
+
+# Real-Time Example: Shopping Cart
+
+A reducer becomes even more useful when you have many related actions.
+
+```jsx
+const initialState = {
+  items: [],
+  total: 0,
+};
+```
+
+Reducer:
+
+```jsx
+function cartReducer(state, action) {
+  switch (action.type) {
+    case "ADD_ITEM":
+      // Add item to cart
+      break;
+
+    case "REMOVE_ITEM":
+      // Remove item
+      break;
+
+    case "UPDATE_QUANTITY":
+      // Update quantity
+      break;
+
+    case "CLEAR_CART":
+      // Empty cart
+      break;
+
+    default:
+      return state;
+  }
+}
+```
+
+Instead of managing several `useState` hooks, all cart-related logic stays in one reducer.
+
+---
+
+## Interview Tip
+
+When explaining `useReducer`, remember this sequence:
+
+```text
+Initial State
+      ↓
+useReducer()
+      ↓
+dispatch(action)
+      ↓
+Reducer receives state + action
+      ↓
+Reducer returns new state
+      ↓
+React re-renders the component
+```
+
+This clearly demonstrates that **`dispatch` never updates the state directly**. It simply sends an action, and the **reducer decides how the state should change**. This predictable flow is the main advantage of `useReducer`.
