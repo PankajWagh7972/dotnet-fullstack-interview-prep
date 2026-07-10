@@ -641,3 +641,1006 @@ If using **Peek Lock**, the message remains in the queue until the lock expires,
 | Best for enterprise microservices | Best for simple background jobs |
 
 For enterprise .NET microservices, **Azure Service Bus** is typically the preferred choice because it offers advanced messaging capabilities, reliability, and scalability.
+
+
+Since you're preparing for **5–7 years .NET Full Stack interviews**, I'll explain Azure Functions the way interviewers expect—not just definitions, but **how they work internally, when to use them, architecture decisions, storage, scaling, and real-world scenarios.**
+
+---
+
+# Azure Functions Complete Interview Guide
+
+---
+
+# 1. What is Azure Function?
+
+An Azure Function is a **serverless event-driven compute service**.
+
+Serverless does **NOT** mean there are no servers.
+
+It means:
+
+* Microsoft manages the servers.
+* You only deploy your code.
+* Azure handles:
+
+  * Scaling
+  * OS updates
+  * Runtime
+  * Availability
+  * Infrastructure
+
+Your responsibility is only writing business logic.
+
+---
+
+## Traditional API
+
+```text
+User
+
+↓
+
+API
+
+↓
+
+Virtual Machine
+
+↓
+
+Windows/Linux
+
+↓
+
+IIS/Kestrel
+
+↓
+
+Application
+```
+
+You manage
+
+* Server
+* Scaling
+* Patching
+* CPU
+* Memory
+
+---
+
+## Azure Function
+
+```text
+User
+
+↓
+
+Trigger
+
+↓
+
+Azure Function
+
+↓
+
+Azure Runtime
+
+↓
+
+Azure Infrastructure
+```
+
+Azure manages everything.
+
+---
+
+# 2. When should you use Azure Functions?
+
+Good for
+
+* Event Processing
+* Background Jobs
+* Scheduled Jobs
+* Queue Processing
+* Image Processing
+* Notifications
+* File Uploads
+* IoT
+* Microservices
+
+Don't use Azure Functions for
+
+❌ Large Monolithic APIs
+
+❌ Long-running user requests
+
+❌ Complex Web Applications
+
+Use
+
+* ASP.NET Core API
+* App Service
+* AKS
+
+instead.
+
+---
+
+# 3. Azure Function Execution Model
+
+Every Azure Function has
+
+```text
+Trigger
+
+↓
+
+Input Binding
+
+↓
+
+Function
+
+↓
+
+Output Binding
+```
+
+Example
+
+```text
+Blob Uploaded
+
+↓
+
+Blob Trigger
+
+↓
+
+Resize Image
+
+↓
+
+Save to Blob Storage
+```
+
+No code required for reading blob.
+
+Binding handles it.
+
+---
+
+# 4. Azure Function Lifecycle
+
+Suppose
+
+Customer uploads image.
+
+Execution
+
+```text
+Upload Image
+
+↓
+
+Blob Storage
+
+↓
+
+Blob Trigger Fires
+
+↓
+
+Runtime Creates Function Instance
+
+↓
+
+Execute Code
+
+↓
+
+Save Thumbnail
+
+↓
+
+Destroy Instance
+```
+
+If idle
+
+Function instance is destroyed.
+
+This is why Cold Start happens.
+
+---
+
+# 5. What is Cold Start?
+
+Suppose
+
+Nobody uses function for
+
+```text
+30 minutes
+```
+
+Azure unloads it.
+
+Next request
+
+```text
+Request
+
+↓
+
+Start VM
+
+↓
+
+Load Runtime
+
+↓
+
+Load DLL
+
+↓
+
+Run Function
+```
+
+Delay
+
+```text
+2-10 seconds
+```
+
+This is Cold Start.
+
+Premium Plan removes cold start.
+
+---
+
+# 6. Hosting Plans
+
+## Consumption Plan
+
+Most popular.
+
+Pros
+
+* Pay per execution
+* Auto Scale
+* Cheap
+
+Cons
+
+* Cold Start
+* Max execution timeout (configurable, but not unlimited)
+
+Best for
+
+* Notifications
+* Queue Processing
+* APIs with low or burst traffic
+
+---
+
+## Premium Plan
+
+Pros
+
+* No Cold Start
+* VNET Support
+* More CPU
+* Always Running
+
+Best for
+
+Enterprise applications.
+
+---
+
+## Dedicated Plan (App Service Plan)
+
+Runs on dedicated VMs.
+
+Pros
+
+* Always Running
+* Predictable Performance
+
+Cons
+
+You pay even when idle.
+
+---
+
+## Flex Consumption Plan (Modern)
+
+Microsoft's latest serverless hosting option.
+
+Features
+
+* Better scaling
+* Improved networking
+* Reduced cold start compared to classic Consumption
+* More flexible instance management
+
+---
+
+# 7. Azure Function Triggers
+
+There are many triggers.
+
+Let's understand each.
+
+---
+
+# HTTP Trigger
+
+Most common.
+
+Architecture
+
+```text
+Browser
+
+↓
+
+HTTP Request
+
+↓
+
+Azure Function
+
+↓
+
+Response
+```
+
+Example
+
+```text
+GET /employees
+```
+
+Use Cases
+
+* APIs
+* Webhooks
+* Mobile Backend
+
+Example
+
+```csharp
+[Function("GetEmployee")]
+public HttpResponseData Run(...)
+```
+
+---
+
+# Timer Trigger
+
+Runs automatically.
+
+Architecture
+
+```text
+Timer
+
+↓
+
+Azure Function
+
+↓
+
+Execute
+```
+
+Cron
+
+```text
+Every day
+
+Every hour
+
+Every minute
+```
+
+Example
+
+Every midnight
+
+```text
+Generate Reports
+
+Backup Database
+
+Archive Logs
+
+Delete Temp Files
+```
+
+---
+
+# Blob Trigger
+
+Triggered whenever
+
+Blob Storage changes.
+
+```text
+Upload PDF
+
+↓
+
+Blob Storage
+
+↓
+
+Function
+
+↓
+
+OCR
+
+↓
+
+Save Metadata
+```
+
+Use Cases
+
+* Image Resize
+* OCR
+* Virus Scan
+* Document Processing
+
+---
+
+# Queue Trigger (Azure Storage Queue)
+
+```text
+Application
+
+↓
+
+Storage Queue
+
+↓
+
+Azure Function
+```
+
+Simple messaging.
+
+Use
+
+* Email
+* Logging
+* Notifications
+
+---
+
+# Service Bus Trigger
+
+Enterprise Queue.
+
+```text
+API
+
+↓
+
+Service Bus
+
+↓
+
+Function
+```
+
+Supports
+
+* Retry
+* Dead Letter Queue
+* Sessions
+* FIFO
+* Duplicate Detection
+
+Use
+
+Enterprise Microservices.
+
+---
+
+# Cosmos DB Trigger
+
+Whenever data changes
+
+```text
+Insert
+
+↓
+
+Cosmos DB
+
+↓
+
+Function
+```
+
+Use
+
+* Audit
+* Notifications
+* Search Index
+* Analytics
+
+---
+
+# Event Grid Trigger
+
+Azure resource events.
+
+Example
+
+```text
+Blob Created
+
+↓
+
+Event Grid
+
+↓
+
+Function
+```
+
+Used for
+
+Azure Event Routing.
+
+---
+
+# Event Hub Trigger
+
+Streaming.
+
+Millions of events.
+
+```text
+IoT Device
+
+↓
+
+Event Hub
+
+↓
+
+Function
+
+↓
+
+Analytics
+```
+
+Use
+
+* Telemetry
+* Sensors
+* GPS
+* Logs
+
+---
+
+# Kafka Trigger
+
+Streaming from Kafka.
+
+Mostly
+
+Large Enterprises.
+
+---
+
+# Durable Function Trigger
+
+Most advanced.
+
+Supports
+
+* Long-running workflows
+* Checkpointing
+* State
+
+Example
+
+Loan Approval
+
+```text
+Submit
+
+↓
+
+Manager Approval
+
+↓
+
+Finance
+
+↓
+
+Legal
+
+↓
+
+Complete
+```
+
+Normal Function cannot remember state.
+
+Durable Function can.
+
+---
+
+# Storage Used by Azure Functions
+
+Interview Question
+
+Why does Azure Function need Storage Account?
+
+Answer
+
+Azure Functions use Azure Storage internally for runtime operations.
+
+Storage stores
+
+* Logs
+* Trigger metadata
+* Scale Controller information
+* Checkpoints
+* Durable Function state
+
+Without storage
+
+Function App cannot operate (for most hosting models).
+
+---
+
+# Storage Types
+
+## Blob Storage
+
+Stores
+
+```text
+Images
+
+Videos
+
+PDF
+
+CSV
+
+Backup Files
+```
+
+Use Cases
+
+* Upload
+* Download
+* Image Processing
+
+---
+
+## Queue Storage
+
+Simple Queue.
+
+```text
+Message
+
+↓
+
+Queue
+
+↓
+
+Function
+```
+
+Use
+
+Background jobs.
+
+---
+
+## Table Storage
+
+NoSQL Key-Value Database.
+
+Stores
+
+```text
+Logs
+
+Configuration
+
+Metadata
+```
+
+Cheap.
+
+---
+
+## File Share
+
+SMB Share.
+
+Mostly
+
+Enterprise applications.
+
+---
+
+# Difference
+
+| Storage | Purpose            |
+| ------- | ------------------ |
+| Blob    | Files              |
+| Queue   | Messages           |
+| Table   | NoSQL              |
+| Files   | Shared File System |
+
+---
+
+# Azure Function Bindings
+
+Instead of writing SDK code
+
+Binding injects data automatically.
+
+Without Binding
+
+```csharp
+BlobClient
+
+↓
+
+Download
+
+↓
+
+Open Stream
+
+↓
+
+Read
+```
+
+With Binding
+
+```csharp
+public void Run(
+[BlobTrigger(...)] Stream stream)
+```
+
+Done.
+
+---
+
+# Input Binding
+
+Reads data.
+
+```text
+SQL
+
+↓
+
+Function
+```
+
+---
+
+# Output Binding
+
+Writes data.
+
+```text
+Function
+
+↓
+
+Blob
+
+↓
+
+Queue
+
+↓
+
+Cosmos
+```
+
+---
+
+# Retry Policy
+
+Suppose SQL Server is down.
+
+Function
+
+↓
+
+Exception
+
+↓
+
+Retry
+
+↓
+
+Retry
+
+↓
+
+Retry
+
+↓
+
+DLQ
+
+---
+
+# Scaling
+
+1000 messages
+
+Azure creates
+
+```text
+Instance1
+
+Instance2
+
+Instance3
+
+Instance4
+```
+
+Each processes messages independently.
+
+---
+
+# Azure Function vs WebJob
+
+| Azure Function    | WebJob                      |
+| ----------------- | --------------------------- |
+| Serverless        | Runs inside App Service     |
+| Auto Scale        | Limited                     |
+| Multiple Triggers | Mostly scheduled/background |
+| Modern            | Legacy                      |
+
+---
+
+# Azure Function vs Logic Apps
+
+Function
+
+* Code
+
+Logic App
+
+* No Code
+
+Logic Apps connect
+
+* SAP
+* Salesforce
+* Outlook
+* Dynamics
+
+Business workflow.
+
+---
+
+# Azure Function vs ASP.NET Core API
+
+| Azure Function | ASP.NET Core       |
+| -------------- | ------------------ |
+| Event Driven   | Request Driven     |
+| Auto Scale     | Manual/Configured  |
+| Small Tasks    | Complete API       |
+| Serverless     | Hosted Application |
+
+---
+
+# Azure Function Interview Questions (5–8 Years)
+
+## Q1. What happens internally when an HTTP request reaches an Azure Function?
+
+**Answer:**
+
+1. Request reaches Azure Front Door/App Service infrastructure.
+2. Azure Functions runtime receives the request.
+3. If no instance exists, Azure creates one (cold start if necessary).
+4. Dependency Injection container is initialized (once per instance).
+5. Function executes.
+6. Response is returned.
+7. Instance is reused for subsequent requests until Azure scales down.
+
+---
+
+## Q2. Why is a Storage Account mandatory?
+
+Because Azure Functions use it internally for:
+
+* Trigger state
+* Scale controller
+* Checkpointing
+* Host metadata
+* Durable Functions state
+* Logs (depending on configuration)
+
+---
+
+## Q3. What is the difference between Azure Queue Storage and Azure Service Bus?
+
+| Azure Queue Storage | Azure Service Bus       |
+| ------------------- | ----------------------- |
+| Simple messaging    | Enterprise messaging    |
+| Basic retry         | Advanced retry policies |
+| No Topics           | Topics & Subscriptions  |
+| No Sessions         | Sessions supported      |
+| No Transactions     | Transactions supported  |
+| Lower cost          | More features           |
+
+---
+
+## Q4. What are Durable Functions?
+
+Durable Functions extend Azure Functions by allowing you to build **stateful workflows**. They use orchestration functions to coordinate activities and persist execution state, making them suitable for long-running business processes.
+
+Common patterns:
+
+* Function chaining
+* Fan-out/Fan-in
+* Async HTTP APIs
+* Human approval workflows
+* Monitoring loops
+
+---
+
+## Q5. What are the different types of bindings?
+
+* **Trigger Binding** – Starts the function (HTTP, Timer, Blob, Service Bus, etc.).
+* **Input Binding** – Reads data from external services without manual SDK code.
+* **Output Binding** – Writes data to external services such as Blob Storage, Queue Storage, or Cosmos DB.
+
+---
+
+## Q6. Can Azure Functions call other Azure Functions?
+
+Yes. Common approaches include:
+
+* HTTP Trigger → HTTP call
+* Service Bus → Event-driven communication (preferred for microservices)
+* Event Grid
+* Durable Function orchestration
+* Azure SDKs (depending on the service)
+
+For loosely coupled architectures, asynchronous messaging with **Azure Service Bus** is generally preferred over direct HTTP calls.
+
+---
+
+## Q7. What is the difference between In-Process and Isolated Worker models?
+
+| In-Process                                   | Isolated Worker                                |
+| -------------------------------------------- | ---------------------------------------------- |
+| Runs inside the Azure Functions host process | Runs in a separate .NET process                |
+| Shares the host runtime                      | Independent worker process                     |
+| Tighter coupling                             | Better isolation and flexibility               |
+| Older model                                  | Recommended for .NET 8+ and future development |
+
+Microsoft recommends the **Isolated Worker** model for new .NET applications because it provides better version independence, middleware support, and long-term compatibility.
