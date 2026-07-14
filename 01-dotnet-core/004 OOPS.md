@@ -373,3 +373,87 @@ Stores the application's startup time.
 
 > `static readonly` is used to create a class-level field that is shared across all instances and can only be assigned once, either at declaration or in a static constructor. It's commonly used for configuration values, shared objects like `HttpClient`, or values determined at application startup that should remain immutable.
 
+# How to Catch Multiple Exceptions at Once in C#?
+
+There are **three common ways** to handle multiple exceptions in C#.
+
+---
+
+# 1. Multiple `catch` Blocks (Most Common)
+
+Handle each exception differently.
+
+```csharp
+try
+{
+    int result = 10 / int.Parse("0");
+}
+catch (DivideByZeroException ex)
+{
+    Console.WriteLine("Cannot divide by zero.");
+}
+catch (FormatException ex)
+{
+    Console.WriteLine("Invalid number format.");
+}
+catch (Exception ex)
+{
+    Console.WriteLine("General exception.");
+}
+```
+
+**Use Case:** Different exceptions require different handling.
+
+---
+
+# 2. Single `catch` with Exception Filters (`when`)
+
+Catch multiple exception types in one block.
+
+```csharp
+try
+{
+    // Code
+}
+catch (Exception ex) when (
+    ex is DivideByZeroException ||
+    ex is FormatException)
+{
+    Console.WriteLine("Handled DivideByZero or FormatException.");
+}
+```
+
+**Use Case:** Multiple exceptions need the **same handling**.
+
+---
+
+# 3. Catch the Base `Exception`
+
+Catch all exceptions.
+
+```csharp
+try
+{
+    // Code
+}
+catch (Exception ex)
+{
+    Console.WriteLine(ex.Message);
+}
+```
+
+**Use Case:** Global logging or a final fallback handler.
+
+---
+
+# Interview Answer (30 seconds)
+
+> In C#, multiple exceptions can be handled using multiple `catch` blocks, a single `catch` block with an exception filter (`when`) for common handling, or a general `catch (Exception)` block as a fallback. The preferred approach is to catch specific exceptions first and keep `Exception` as the last catch block.
+
+### Best Practice
+
+* ✅ Catch **specific exceptions first**.
+* ✅ Keep `catch (Exception)` **last**.
+* ✅ Use a **single `catch` with `when`** if multiple exception types share the same handling logic.
+
+
