@@ -456,4 +456,143 @@ catch (Exception ex)
 * ✅ Keep `catch (Exception)` **last**.
 * ✅ Use a **single `catch` with `when`** if multiple exception types share the same handling logic.
 
+# What is `IDisposable` in C#?
+
+`IDisposable` is an interface used to **release unmanaged resources** (or other expensive resources) when they are no longer needed.
+
+It contains a single method:
+
+```csharp
+void Dispose();
+```
+
+Calling `Dispose()` frees resources immediately instead of waiting for the Garbage Collector.
+
+---
+
+# Why is it needed?
+
+The **Garbage Collector (GC)** only cleans up **managed memory**. It does **not** automatically release unmanaged resources such as:
+
+* File handles
+* Database connections
+* Network sockets
+* Streams
+* OS handles
+
+`IDisposable` allows you to release these resources explicitly.
+
+---
+
+# Example
+
+```csharp
+using System;
+using System.IO;
+
+class Program
+{
+    static void Main()
+    {
+        using (StreamReader reader = new StreamReader("test.txt"))
+        {
+            Console.WriteLine(reader.ReadToEnd());
+        }   // Dispose() is called automatically here
+    }
+}
+```
+
+Without `using`, you would need:
+
+```csharp
+StreamReader reader = new StreamReader("test.txt");
+
+try
+{
+    Console.WriteLine(reader.ReadToEnd());
+}
+finally
+{
+    reader.Dispose();
+}
+```
+
+---
+
+# Creating Your Own `IDisposable`
+
+```csharp
+public class FileManager : IDisposable
+{
+    public void Dispose()
+    {
+        Console.WriteLine("Resources released.");
+    }
+}
+```
+
+Usage:
+
+```csharp
+using var manager = new FileManager();
+
+// Work with manager
+```
+
+When execution leaves the scope, `Dispose()` is called automatically.
+
+---
+
+# Common Classes That Implement `IDisposable`
+
+* `SqlConnection`
+* `SqlCommand`
+* `FileStream`
+* `StreamReader`
+* `MemoryStream`
+* `HttpClient` (in some usage patterns)
+* `DbContext` (EF Core)
+
+---
+
+# `using` Statement
+
+The `using` statement ensures `Dispose()` is called automatically, even if an exception occurs.
+
+```csharp
+using var connection = new SqlConnection(connectionString);
+
+// Use the connection
+```
+
+Equivalent to:
+
+```csharp
+var connection = new SqlConnection(connectionString);
+
+try
+{
+    // Use connection
+}
+finally
+{
+    connection.Dispose();
+}
+```
+
+---
+
+# Interview Answer (30 Seconds)
+
+> `IDisposable` is an interface used to release unmanaged or expensive resources such as file handles, database connections, streams, and sockets. It defines a single method, `Dispose()`, which is called to clean up resources immediately instead of waiting for the Garbage Collector. In C#, we typically use the `using` statement to ensure `Dispose()` is called automatically, even if an exception occurs.
+
+---
+
+# Quick Interview Points
+
+* ✅ `IDisposable` has **one method**: `Dispose()`.
+* ✅ Used to release unmanaged or expensive resources.
+* ✅ `using` automatically calls `Dispose()`.
+* ✅ Garbage Collector frees **memory**, while `Dispose()` frees **external resources**.
+* ✅ Commonly used with `DbContext`, streams, and database connections.
 
