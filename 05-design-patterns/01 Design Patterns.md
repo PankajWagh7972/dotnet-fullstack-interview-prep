@@ -98,3 +98,153 @@ There are **three main types of Design Patterns** in software development (Gang 
 > 3. **Behavioral patterns**, which define how objects communicate and interact (e.g., Strategy, Observer, Chain of Responsibility).
 >
 > In ASP.NET Core, examples include **Singleton** for shared services, **Factory** for object creation, **Decorator** for adding functionality, **Chain of Responsibility** in the middleware pipeline, and **Strategy** for selecting algorithms like payment processing.
+
+
+# Static Class vs Singleton Instance
+
+| Feature              | Static Class                  | Singleton                          |
+| -------------------- | ----------------------------- | ---------------------------------- |
+| Object Creation      | ❌ Cannot create objects       | ✅ One object is created            |
+| Instance             | No instance                   | Single instance                    |
+| Inheritance          | ❌ Cannot inherit              | ✅ Can inherit/implement interfaces |
+| Dependency Injection | ❌ Not supported               | ✅ Supported                        |
+| Interface Support    | ❌ Cannot implement interfaces | ✅ Can implement interfaces         |
+| Constructor          | Only static constructor       | Private constructor                |
+| Testing/Mocking      | ❌ Difficult                   | ✅ Easy (using interfaces)          |
+| State                | Shared globally               | Shared through one instance        |
+| Best For             | Utility/helper methods        | Shared services/resources          |
+
+---
+
+# Static Class
+
+A **static class** contains only static members and **cannot be instantiated**.
+
+### Example
+
+```csharp
+public static class MathHelper
+{
+    public static int Add(int a, int b)
+    {
+        return a + b;
+    }
+}
+
+// Usage
+int result = MathHelper.Add(10, 20);
+```
+
+### Use Cases
+
+* Helper methods
+* Utility classes
+* Extension methods
+* Mathematical calculations
+
+Examples:
+
+* `Math`
+* `Convert`
+* `File`
+* `Path`
+
+---
+
+# Singleton
+
+A **Singleton** ensures that **only one instance** of a class exists throughout the application's lifetime.
+
+### Example
+
+```csharp
+public sealed class Logger
+{
+    private static readonly Logger _instance = new Logger();
+
+    private Logger() { }
+
+    public static Logger Instance => _instance;
+
+    public void Log(string message)
+    {
+        Console.WriteLine(message);
+    }
+}
+
+// Usage
+Logger.Instance.Log("Application Started");
+```
+
+### Use Cases
+
+* Logger
+* Cache service
+* Configuration service
+* Database connection manager (where appropriate)
+
+---
+
+# Key Difference
+
+### Static Class
+
+* No object is created.
+* Members are accessed directly using the class name.
+* Cannot implement interfaces or participate in dependency injection.
+
+### Singleton
+
+* Exactly one object is created.
+* Accessed through a single instance (e.g., `Instance` property or DI container).
+* Can implement interfaces, making it testable and suitable for dependency injection.
+
+---
+
+# ASP.NET Core Example
+
+```csharp
+builder.Services.AddSingleton<IEmailService, EmailService>();
+```
+
+`EmailService` is a **Singleton service**:
+
+* One instance is created.
+* Reused across the application.
+* Can be injected into controllers and other services.
+
+A static class **cannot** be registered with the DI container.
+
+---
+
+# When to Use
+
+### Use a Static Class when:
+
+* You only need stateless utility methods.
+* No dependency injection is required.
+
+Examples:
+
+* `Math`
+* `StringHelper`
+* `DateTimeHelper`
+
+### Use a Singleton when:
+
+* You need one shared object with state or dependencies.
+* The service should participate in dependency injection.
+* You want to mock or replace it during testing.
+
+Examples:
+
+* Logging service
+* Configuration service
+* In-memory cache service
+
+---
+
+# Interview Answer (30 seconds)
+
+> A static class cannot be instantiated and contains only static members. It is mainly used for stateless utility methods and cannot implement interfaces or be injected through dependency injection. A Singleton, on the other hand, is a design pattern that ensures only one instance of a class exists. It can implement interfaces, maintain state, work with dependency injection, and is easier to test. In modern ASP.NET Core applications, Singleton services are generally preferred over static classes for shared application services.
+
