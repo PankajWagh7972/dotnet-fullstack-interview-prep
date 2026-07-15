@@ -243,6 +243,19 @@ Output
 ### Solution
 
 ```csharp
+int[] numbers = { 1, 1, 2, 3, 2, 2, 4, 5, 5 };
+
+var frequency = numbers
+    .GroupBy(x => x)
+    .ToDictionary(g => g.Key, g => g.Count());
+
+foreach (var item in frequency)
+{
+    Console.WriteLine($"{item.Key} -> {item.Value}");
+}
+
+
+//-----------------------
 Dictionary<int,int> dict = new();
 
 foreach(var num in numbers)
