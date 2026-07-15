@@ -98,7 +98,17 @@ Output
 ```
 w
 ```
+```
+string word = "swiss";
 
+char firstNonRepeating = word
+    .GroupBy(c => c)
+    .Where(g => g.Count() == 1)
+    .Select(g => g.Key)
+    .First();
+
+Console.WriteLine(firstNonRepeating);
+```
 ---
 
 # 3. Two Sum (Dictionary)
