@@ -409,16 +409,9 @@ Table
 
 ```sql
 WITH CTE AS
-(
-SELECT *,
-ROW_NUMBER()
-OVER
-(
-PARTITION BY Name
-ORDER BY Id
-) RN
-FROM Employee
-)
+( SELECT *,
+ROW_NUMBER() OVER(PARTITION BY Name ORDER BY Id) RN
+FROM Employee )
 
 DELETE
 FROM CTE
@@ -436,13 +429,8 @@ SELECT Salary
 FROM
 (
 SELECT Salary,
-DENSE_RANK()
-OVER
-(
-ORDER BY Salary DESC
-) DR
-FROM Employee
-)t
+DENSE_RANK() OVER ( ORDER BY Salary DESC ) DR
+FROM Employee )t
 WHERE DR=@N;
 ```
 
