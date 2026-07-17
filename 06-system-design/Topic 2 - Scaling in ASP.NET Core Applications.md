@@ -782,3 +782,773 @@ Tomorrow's interview is very likely to include this:
 > **SQL Indexing + Execution Plans + Query Optimization**
 
 This is one of the most common areas where interviewers probe deeply because every scalable .NET application ultimately depends on SQL Server performance. It also naturally leads to discussions about Entity Framework Core, API performance, and overall system design.
+
+
+Excellent questions. These are exactly the kinds of **follow-up questions** that distinguish a 5+ year developer from someone who has only memorized definitions. Let's go one by one.
+
+---
+
+# 1. How do Read Replicas stay in sync with the Primary Database?
+
+## Interview Question
+
+**Interviewer:**
+
+> If writes happen only on the Primary database, how does the Read Replica get updated?
+
+### Answer
+
+Read Replicas use **database replication**.
+
+Whenever data changes on the Primary database, SQL Server captures the transaction and sends it to the replica(s).
+
+```text
+          INSERT Product
+
+                │
+
+                ▼
+
+        Primary Database
+
+                │
+
+      Transaction Log (.ldf)
+
+                │
+
+      Replication Mechanism
+
+      ┌─────────┴─────────┐
+
+      ▼                   ▼
+
+ Read Replica 1      Read Replica 2
+```
+
+The replica continuously applies those changes.
+
+---
+
+## Real Example
+
+Suppose:
+
+```sql
+INSERT INTO Product(Name,Price)
+VALUES('iPhone',1000)
+```
+
+This is written to:
+
+```text
+Primary Database
+```
+
+Immediately after the transaction commits:
+
+```text
+Transaction Log
+
+↓
+
+Replica receives log
+
+↓
+
+Replica executes same transaction
+```
+
+Now both databases contain:
+
+```text
+Product
+
+iPhone
+
+1000
+```
+
+---
+
+## Is it always instant?
+
+No.
+
+Usually there is a **Replication Lag**.
+
+Example:
+
+```text
+Primary
+
+10:00:00
+
+↓
+
+Replica
+
+10:00:02
+```
+
+2 seconds later.
+
+---
+
+## Follow-up
+
+**Interviewer**
+
+Can users read stale data?
+
+Answer
+
+Yes.
+
+Because replication is asynchronous in many systems.
+
+That's why:
+
+* Order Placement → Read Primary
+* Reports → Read Replica
+
+---
+
+# 2. Which SQL Server Replication Types exist?
+
+### Snapshot Replication
+
+Copies entire database.
+
+Good for
+
+Reference data.
+
+---
+
+### Transactional Replication ⭐
+
+Most common.
+
+Copies transaction log continuously.
+
+Near real-time.
+
+---
+
+### Merge Replication
+
+Both databases update independently.
+
+Later merged.
+
+Used in offline systems.
+
+---
+
+# 3. How do applications decide where to read?
+
+Never let the UI decide.
+
+Application Layer handles it.
+
+Example
+
+```text
+Client
+
+↓
+
+.NET API
+
+↓
+
+Read?
+
+↓
+
+Read Replica
+
+Write?
+
+↓
+
+Primary Database
+```
+
+Repository example
+
+```csharp
+public async Task<Product> GetProduct(int id)
+{
+    return await _readDb.Products
+        .FirstOrDefaultAsync(x=>x.Id==id);
+}
+
+public async Task Save(Product product)
+{
+    _writeDb.Products.Update(product);
+    await _writeDb.SaveChangesAsync();
+}
+```
+
+---
+
+# 4. What if user updates and immediately refreshes?
+
+This is an excellent senior-level question.
+
+User:
+
+```text
+Update Salary
+```
+
+Immediately
+
+```text
+GET Salary
+```
+
+Replica hasn't synchronized yet.
+
+User sees old value.
+
+---
+
+Solutions
+
+### Option 1 (Most Common)
+
+Read from Primary after write.
+
+Example
+
+```text
+POST
+
+↓
+
+Primary
+
+↓
+
+Next GET
+
+↓
+
+Primary
+```
+
+---
+
+### Option 2
+
+Use Cache
+
+Update cache immediately.
+
+Users read cache.
+
+---
+
+### Option 3
+
+Accept eventual consistency.
+
+Good for
+
+* Reports
+* Analytics
+
+---
+
+# 5. How do we add a Load Balancer for an ASP.NET Core API?
+
+The **application code does not change**. The load balancer sits **in front of** your API instances.
+
+```text
+                  Internet
+
+                     │
+
+                     ▼
+
+        Azure Application Gateway
+
+                     │
+
+        ┌────────────┼────────────┐
+
+        ▼            ▼            ▼
+
+   API Instance1 API Instance2 API Instance3
+
+             │          │          │
+
+             └──────────┼──────────┘
+
+                    SQL Server
+```
+
+---
+
+## Azure App Service
+
+Suppose
+
+You deployed
+
+```text
+API
+
+↓
+
+Azure App Service
+```
+
+Open
+
+```text
+Scale Out
+```
+
+Increase
+
+```text
+Instances
+
+1
+
+↓
+
+5
+```
+
+Azure automatically puts them behind Microsoft's load balancer.
+
+No code changes.
+
+---
+
+## Azure Kubernetes Service
+
+Pods
+
+```text
+Pod1
+
+Pod2
+
+Pod3
+```
+
+Service
+
+↓
+
+Load Balancer
+
+↓
+
+Traffic distributed.
+
+---
+
+# 6. Does .NET Core know which server handled the request?
+
+No.
+
+ASP.NET Core is unaware.
+
+The load balancer forwards the request.
+
+---
+
+# 7. What changes are required in the API?
+
+Ideally:
+
+**Nothing.**
+
+BUT
+
+Application should be
+
+## Stateless
+
+Don't do
+
+```csharp
+public static string CurrentUser;
+```
+
+Wrong.
+
+Because
+
+Server1
+
+stores
+
+```text
+Pankaj
+```
+
+Server2
+
+stores
+
+```text
+NULL
+```
+
+Always use:
+
+* JWT
+* Redis
+* SQL
+
+Never store user state in server memory.
+
+---
+
+# 8. What is Rate Limiting?
+
+One of the hottest .NET 8 interview topics.
+
+Suppose
+
+One user sends
+
+```text
+100000 Requests
+```
+
+Server crashes.
+
+Rate Limiting stops abuse.
+
+---
+
+Example
+
+Allow
+
+```text
+100 Requests
+
+Per Minute
+```
+
+Request
+
+101
+
+↓
+
+Blocked
+
+HTTP
+
+```text
+429
+
+Too Many Requests
+```
+
+---
+
+# .NET 8 Rate Limiting
+
+Program.cs
+
+```csharp
+builder.Services.AddRateLimiter(options =>
+{
+    options.AddFixedWindowLimiter("fixed", opt =>
+    {
+        opt.Window = TimeSpan.FromMinutes(1);
+        opt.PermitLimit = 100;
+        opt.QueueLimit = 0;
+    });
+});
+
+app.UseRateLimiter();
+
+app.MapControllers().RequireRateLimiting("fixed");
+```
+
+---
+
+# 9. Types of Rate Limiting
+
+## Fixed Window
+
+```text
+1 Minute
+
+↓
+
+100 Requests
+
+↓
+
+Reset
+```
+
+Simple.
+
+---
+
+## Sliding Window
+
+Instead of fixed intervals,
+
+continuously moves.
+
+More accurate.
+
+---
+
+## Token Bucket ⭐
+
+Imagine bucket
+
+```text
+100 Tokens
+```
+
+Each request
+
+↓
+
+Consumes one token.
+
+Tokens refill gradually.
+
+Most cloud providers use this.
+
+---
+
+## Leaky Bucket
+
+Requests enter bucket.
+
+Released
+
+Constant speed.
+
+Smooth traffic.
+
+---
+
+# Which one is best?
+
+Interview Answer
+
+For most APIs
+
+Sliding Window
+
+or
+
+Token Bucket.
+
+---
+
+# 10. Other Techniques to Improve Scalability
+
+## Response Compression
+
+Without
+
+```text
+2 MB JSON
+```
+
+With Gzip
+
+```text
+300 KB
+```
+
+ASP.NET Core
+
+```csharp
+builder.Services.AddResponseCompression();
+
+app.UseResponseCompression();
+```
+
+---
+
+## Pagination
+
+Bad
+
+```sql
+SELECT *
+FROM Orders
+```
+
+Good
+
+```sql
+SELECT *
+FROM Orders
+ORDER BY Id
+OFFSET 0 ROWS
+FETCH NEXT 50 ROWS ONLY
+```
+
+---
+
+## Projection
+
+Wrong
+
+```csharp
+_context.Products.ToList();
+```
+
+Returns every column.
+
+Better
+
+```csharp
+_context.Products
+.Select(x=>new
+{
+    x.Id,
+    x.Name
+});
+```
+
+Only required columns are returned.
+
+---
+
+## AsNoTracking()
+
+Wrong
+
+```csharp
+_context.Products.ToList();
+```
+
+Better
+
+```csharp
+_context.Products
+.AsNoTracking()
+.ToList();
+```
+
+Useful for read-only queries because EF Core skips change tracking, reducing memory usage and improving performance.
+
+---
+
+## Async Programming
+
+Wrong
+
+```csharp
+_context.SaveChanges();
+```
+
+Better
+
+```csharp
+await _context.SaveChangesAsync();
+```
+
+This frees the request thread while waiting for I/O, allowing the server to handle more concurrent requests.
+
+---
+
+## Connection Pooling
+
+Opening SQL connections repeatedly is expensive.
+
+ADO.NET maintains a pool of reusable connections.
+
+```text
+Request
+
+↓
+
+Pool
+
+↓
+
+Existing Connection
+
+↓
+
+SQL
+```
+
+Connection pooling improves throughput and reduces latency.
+
+---
+
+## Background Processing
+
+Don't send emails during the request.
+
+Instead
+
+```text
+API
+
+↓
+
+Queue
+
+↓
+
+Background Worker
+
+↓
+
+Email
+```
+
+This keeps API response times low.
+
+---
+
+# ⭐ Senior-Level Interview Question
+
+**Interviewer:**
+
+> Our application has 10 API servers, Redis, and a Load Balancer, but it's still slow. What could be the bottleneck?
+
+### Strong Answer
+
+I would investigate each layer:
+
+1. **Database** – Slow queries, missing indexes, blocking, deadlocks.
+2. **External Services** – Payment gateway, third-party APIs, network latency.
+3. **Redis** – Cache hit ratio, latency, memory pressure.
+4. **Application** – Synchronous I/O, thread pool starvation, memory leaks.
+5. **Infrastructure** – CPU, memory, disk I/O, network bandwidth.
+6. **Load Balancer** – Health probes, uneven traffic distribution.
+7. **Monitoring** – Application Insights, SQL execution plans, Azure Monitor.
+
+> **Key point:** Scaling the API tier doesn't help if the real bottleneck is the database or an external dependency.
+
+---
+
+## 💡 One Interview Correction
+
+Many candidates say:
+
+> "We added more servers, so the application scaled."
+
+A better answer is:
+
+> "Adding servers is only one aspect of scaling. A scalable application must be stateless, use distributed caching (Redis), optimize database access with proper indexing and query tuning, support asynchronous processing where appropriate, and be monitored continuously. Otherwise, adding servers simply shifts the bottleneck to another layer."
+
+That's the kind of answer that interviewers expect from someone with **5+ years of .NET and Azure experience**.
