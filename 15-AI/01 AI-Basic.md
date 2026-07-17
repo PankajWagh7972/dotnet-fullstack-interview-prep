@@ -1398,3 +1398,761 @@ A strong response:
 > "My primary production experience is in building enterprise applications with ASP.NET Core, Azure, React, SQL Server, Azure DevOps, and cloud-native architectures. While I haven't yet led a production GenAI platform, I've invested time in understanding enterprise AI patterns such as RAG, Azure OpenAI, Azure AI Search, AI governance, and system design. I see these as extensions of the distributed systems and cloud architecture principles I already use. I'm confident I can contribute quickly because my foundation in scalable backend design, Azure services, security, and API integration is directly applicable to enterprise AI solutions."
 
 This type of answer demonstrates honesty, architectural understanding, and a willingness to learn—qualities that are often more valuable than overstating experience.
+
+----
+This is exactly what you should study. In AI/GenAI interviews, especially for enterprise roles, interviewers often use terms like **chunking**, **embeddings**, **RAG**, **vector search**, etc., and expect you to understand them conceptually.
+
+Below is a comprehensive glossary of the most important AI terms, with definitions, examples, and where each fits in the AI pipeline.
+
+---
+
+# Enterprise AI Pipeline (Big Picture)
+
+Before learning the individual terms, understand the complete flow.
+
+```text
+Enterprise Documents
+(PDF, Word, SharePoint, SQL, Emails)
+            │
+            ▼
+      Data Ingestion
+            │
+            ▼
+        Chunking
+            │
+            ▼
+     Embedding Model
+            │
+            ▼
+      Embedding Vectors
+            │
+            ▼
+      Vector Database
+            │
+            ▼
+     User asks Question
+            │
+            ▼
+      Embedding Query
+            │
+            ▼
+      Similarity Search
+            │
+            ▼
+   Relevant Chunks Retrieved
+            │
+            ▼
+      Prompt Engineering
+            │
+            ▼
+       Large Language Model
+            │
+            ▼
+      Final AI Response
+```
+
+Every interview question generally comes from one of these steps.
+
+---
+
+# 1. Large Language Model (LLM)
+
+## Definition
+
+An LLM (Large Language Model) is an AI model trained on billions of words that understands and generates human language.
+
+Examples
+
+* GPT-4
+* GPT-4.1
+* Claude
+* Gemini
+* Llama
+
+Think of it as an extremely knowledgeable assistant that predicts the next most likely word based on context.
+
+Example
+
+User:
+
+> Explain JWT Authentication.
+
+The LLM generates an explanation using patterns learned during training.
+
+---
+
+# 2. Prompt
+
+## Definition
+
+A prompt is the instruction you send to the LLM.
+
+Example
+
+```text
+Explain ASP.NET Core Dependency Injection in simple terms.
+```
+
+Bad Prompt
+
+```text
+Explain DI
+```
+
+Good Prompt
+
+```text
+You are a senior .NET architect.
+
+Explain Dependency Injection in ASP.NET Core with an example suitable for a junior developer.
+```
+
+---
+
+# 3. Prompt Engineering
+
+## Definition
+
+Prompt Engineering is the process of designing prompts so the AI gives better answers.
+
+Example
+
+Instead of asking
+
+```text
+Explain SQL.
+```
+
+Ask
+
+```text
+Explain SQL joins with tables and examples for interview preparation.
+```
+
+The second prompt produces a far more useful response.
+
+---
+
+# 4. Context
+
+## Definition
+
+Context is all the information provided to the LLM before it answers.
+
+Context can include:
+
+* User question
+* Previous chat
+* Company documents
+* Policies
+* Retrieved documents
+* Tool results
+
+Example
+
+Question
+
+```text
+What is our leave policy?
+```
+
+Without company documents, the model doesn't know.
+
+With the HR policy document supplied as context, it can answer accurately.
+
+---
+
+# 5. Context Window
+
+## Definition
+
+The context window is the maximum number of tokens the model can process in one request.
+
+It includes:
+
+* System prompt
+* User prompt
+* Retrieved documents
+* Conversation history
+* Model response
+
+If the context is too large, older information is dropped or truncated.
+
+---
+
+# 6. Token
+
+## Definition
+
+A token is the smallest unit the model processes.
+
+Example
+
+Sentence
+
+```text
+I love programming.
+```
+
+Approximate tokens
+
+```
+I
+love
+programming
+.
+```
+
+The model charges and reasons based on tokens, not words.
+
+---
+
+# 7. Tokenization
+
+## Definition
+
+The process of breaking text into tokens.
+
+Example
+
+```
+Authentication
+
+↓
+
+Auth
+entication
+```
+
+Different models tokenize text differently.
+
+---
+
+# 8. Ingestion
+
+## Definition
+
+Ingestion is the process of collecting enterprise data before AI can use it.
+
+Sources
+
+* SharePoint
+* SQL Server
+* PDF
+* Word
+* Email
+* CRM
+* Website
+
+Example
+
+A company uploads 10,000 PDF documents into Azure Blob Storage.
+
+These documents are ingested for AI processing.
+
+---
+
+# 9. Parsing
+
+## Definition
+
+Parsing extracts readable text from files.
+
+Example
+
+PDF
+
+↓
+
+Remove formatting
+
+↓
+
+Extract text
+
+↓
+
+Ready for processing
+
+Without parsing, the AI cannot understand the document contents.
+
+---
+
+# 10. Chunking
+
+## Definition
+
+Chunking means dividing a large document into smaller pieces.
+
+Why?
+
+Because LLMs cannot process extremely large documents efficiently in one request.
+
+Example
+
+Original Document
+
+```
+100 Pages
+```
+
+Chunked into
+
+```
+Page 1–2
+
+Page 3–4
+
+Page 5–6
+
+...
+
+Page 99–100
+```
+
+Or by paragraphs:
+
+```
+Chunk 1
+Chunk 2
+Chunk 3
+```
+
+Each chunk is usually 300–500 tokens.
+
+### Why is chunking needed?
+
+Suppose your company policy document has 1,000 pages.
+
+The user asks:
+
+> How many casual leaves are allowed?
+
+The AI only needs the HR section—not the entire document.
+
+Chunking makes retrieval fast and efficient.
+
+---
+
+# 11. Chunk Overlap
+
+## Definition
+
+Overlap means repeating a small portion of text between adjacent chunks.
+
+Example
+
+Chunk 1
+
+```
+Employees receive 20 days of annual leave.
+
+Casual leave...
+```
+
+Chunk 2
+
+```
+Casual leave can be carried forward...
+```
+
+The repeated sentence preserves context across chunk boundaries.
+
+Without overlap, important information can be split and lose meaning.
+
+---
+
+# 12. Embedding
+
+## Definition
+
+An embedding converts text into a list of numbers (a vector) that captures its meaning.
+
+Humans understand language through meaning.
+
+Computers compare numbers.
+
+Embeddings bridge that gap.
+
+Example
+
+Sentence 1
+
+```
+How do I reset my password?
+```
+
+Sentence 2
+
+```
+I forgot my login credentials.
+```
+
+The wording is different, but the meaning is similar.
+
+Embeddings place these sentences close together in vector space.
+
+---
+
+# 13. Embedding Model
+
+## Definition
+
+A model that converts text into embeddings.
+
+Examples
+
+* Azure OpenAI Embedding Models
+* OpenAI text-embedding models
+* Sentence Transformers
+
+Example
+
+```
+Text
+
+↓
+
+Embedding Model
+
+↓
+
+[0.23, -0.55, 0.91, ...]
+```
+
+---
+
+# 14. Vector
+
+## Definition
+
+A vector is simply an array of numbers representing the semantic meaning of text.
+
+Example
+
+```
+Password Reset
+
+↓
+
+[0.13, -0.44, 0.72, ...]
+```
+
+You don't need to interpret the numbers; the AI uses them to compare similarity.
+
+---
+
+# 15. Vector Database
+
+## Definition
+
+A vector database stores embeddings instead of rows and columns.
+
+Examples
+
+* Azure AI Search
+* Pinecone
+* Weaviate
+* ChromaDB
+* FAISS
+
+Purpose
+
+To quickly find semantically similar content.
+
+---
+
+# 16. Similarity Search
+
+## Definition
+
+Searching for vectors that are closest in meaning to the query.
+
+Example
+
+User asks
+
+```
+Vacation policy
+```
+
+Stored document
+
+```
+Annual Leave Policy
+```
+
+Even though the words differ, similarity search retrieves the correct document.
+
+---
+
+# 17. Semantic Search
+
+## Definition
+
+Semantic search focuses on meaning rather than exact keywords.
+
+Keyword Search
+
+```
+"Holiday"
+```
+
+Only matches "Holiday."
+
+Semantic Search
+
+```
+Vacation
+Leave
+Time Off
+Paid Leave
+```
+
+All can match because they are semantically related.
+
+---
+
+# 18. Retrieval
+
+## Definition
+
+Retrieval is the process of fetching the most relevant chunks from the vector database.
+
+Example
+
+Question
+
+```
+Reset Password
+```
+
+Retriever fetches
+
+* Password Policy
+* Login Guide
+* Security Manual
+
+These are passed to the LLM.
+
+---
+
+# 19. Retriever
+
+## Definition
+
+The component responsible for performing similarity search and returning relevant chunks.
+
+Think of it as an intelligent search engine for enterprise documents.
+
+---
+
+# 20. RAG (Retrieval-Augmented Generation)
+
+## Definition
+
+RAG combines document retrieval with LLM generation.
+
+Process
+
+1. User asks a question.
+2. Retrieve relevant document chunks.
+3. Send those chunks to the LLM.
+4. Generate a grounded answer.
+
+Example
+
+Question
+
+> What is our reimbursement policy?
+
+The retriever finds the finance policy, and the LLM answers using that document instead of guessing.
+
+---
+
+# 21. Hallucination
+
+## Definition
+
+When the LLM confidently produces incorrect or fabricated information.
+
+Example
+
+User
+
+> Who is the CEO of my company?
+
+Without company data, the model invents an answer.
+
+RAG helps reduce hallucinations by providing authoritative context.
+
+---
+
+# 22. Temperature
+
+## Definition
+
+Controls randomness in model responses.
+
+* **0.0–0.3:** Deterministic, factual (good for enterprise apps)
+* **0.7–1.0:** More creative (good for content generation)
+
+Example
+
+Temperature = 0.1
+
+> "What is JWT?"
+
+Produces a consistent technical explanation.
+
+Temperature = 0.9
+
+Might produce more varied wording or examples.
+
+---
+
+# 23. Top-p (Nucleus Sampling)
+
+## Definition
+
+Limits token selection to the most probable words whose cumulative probability reaches a threshold (for example, 0.9).
+
+It's another way to control randomness.
+
+---
+
+# 24. Fine-Tuning
+
+## Definition
+
+Retraining or adapting an LLM so it changes its behavior or style.
+
+Use cases
+
+* Industry-specific terminology
+* Specialized writing style
+* Domain-specific tasks
+
+Unlike RAG, fine-tuning changes the model itself.
+
+---
+
+# 25. AI Agent
+
+## Definition
+
+An AI agent is an LLM that can reason, make decisions, and use tools to complete tasks.
+
+Example
+
+Travel Agent
+
+* Search flights
+* Compare hotels
+* Calculate cost
+* Book tickets
+
+Rather than just answering a question, it performs actions.
+
+---
+
+# 26. Tool Calling (Function Calling)
+
+## Definition
+
+Allows the LLM to invoke external tools instead of relying only on its own knowledge.
+
+Example
+
+User
+
+> What's today's exchange rate?
+
+The model calls a currency API to fetch live data before answering.
+
+---
+
+# 27. Multi-Agent System
+
+## Definition
+
+A system where multiple AI agents collaborate, each with a specialized responsibility.
+
+Example
+
+* Planner Agent
+* Search Agent
+* SQL Agent
+* Reporting Agent
+
+The Planner delegates work, and the agents cooperate to produce the final answer.
+
+---
+
+# 28. AI Evaluation
+
+## Definition
+
+The process of measuring AI quality.
+
+Common metrics
+
+* Accuracy
+* Relevance
+* Faithfulness
+* Groundedness
+* Latency
+* Cost
+* User satisfaction
+
+---
+
+# 29. Grounding
+
+## Definition
+
+Grounding ensures the LLM bases its answers on trusted data rather than general knowledge.
+
+Example
+
+Instead of answering from memory, the model uses your company's HR policy document.
+
+---
+
+# 30. AI Observability
+
+## Definition
+
+Monitoring AI systems in production.
+
+Track:
+
+* Response time
+* Token usage
+* Costs
+* Errors
+* Hallucinations
+* User feedback
+
+This is the AI equivalent of monitoring APIs with Application Insights.
+
+---
+
+# Quick Interview Story (How Everything Connects)
+
+Imagine your company has **10,000 HR policy PDFs** stored in Azure Blob Storage.
+
+1. **Ingestion** collects all the PDFs.
+2. **Parsing** extracts text from each PDF.
+3. **Chunking** splits the text into manageable sections (e.g., 400 tokens each).
+4. An **Embedding Model** converts every chunk into a numeric **embedding** (vector).
+5. These vectors are stored in a **Vector Database** such as Azure AI Search.
+6. An employee asks, *"How many maternity leave days are allowed?"*
+7. The question is also converted into an **embedding**.
+8. **Similarity Search** finds the chunks whose vectors are closest to the question.
+9. The **Retriever** returns those chunks.
+10. The retrieved chunks are added as **context** to the **prompt**.
+11. The **LLM** generates an answer based on that context (**RAG**).
+12. **Observability** tools record latency, token usage, cost, and any errors for monitoring.
+
+If you can explain this end-to-end flow confidently in an interview, you'll demonstrate a solid understanding of how enterprise AI applications are built, even if your primary background is in .NET rather than AI engineering.
