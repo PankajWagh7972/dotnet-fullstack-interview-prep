@@ -1196,3 +1196,477 @@ This avoids duplicating business logic while keeping each handler focused on a s
 If an interviewer asks, **"Can we reuse the same model in CQRS?"**, a strong answer is:
 
 > "Yes, the domain entity can absolutely be reused across multiple command and query handlers. What CQRS separates are the request models—commands and queries—because each represents a specific use case with its own validation and intent. The `Employee` entity may be shared by Create, Update, and Delete handlers, while each operation has its own command object such as `CreateEmployeeCommand` or `UpdateEmployeeCommand`."
+
+Since you have **5.6+ years of .NET Full Stack experience**, interviewers usually don't stop at "What is CQRS?". They often ask scenario-based and implementation questions.
+
+Here are some common questions with concise answers.
+
+---
+
+# 1. What is CQRS?
+
+**Answer:**
+
+CQRS (Command Query Responsibility Segregation) is a pattern that separates read operations (Queries) from write operations (Commands). Commands modify data, while queries only retrieve data. This separation improves maintainability, scalability, and testability.
+
+---
+
+# 2. What is the difference between Command and Query?
+
+| Command                  | Query                       |
+| ------------------------ | --------------------------- |
+| Changes data             | Reads data                  |
+| Can call `SaveChanges()` | Never calls `SaveChanges()` |
+| Returns success/ID       | Returns DTO/ViewModel       |
+| POST, PUT, DELETE        | GET                         |
+
+---
+
+# 3. Why use CQRS instead of Repository + Service?
+
+**Answer:**
+
+In traditional architecture, services become very large with many methods. CQRS keeps each operation in its own handler, making code easier to maintain, test, and extend.
+
+---
+
+# 4. What is MediatR?
+
+**Answer:**
+
+MediatR is a .NET library that implements the Mediator pattern. Controllers send commands or queries to `IMediator`, which locates the appropriate handler and executes it. This decouples controllers from business logic.
+
+---
+
+# 5. How does `Mediator.Send()` work internally?
+
+**Answer:**
+
+1. Controller calls `Send()`.
+2. MediatR identifies the request type.
+3. DI resolves the matching `IRequestHandler`.
+4. Pipeline behaviors execute (if configured).
+5. Handler's `Handle()` method runs.
+6. Response is returned to the controller.
+
+---
+
+# 6. What is `IRequest<T>`?
+
+```csharp
+public record CreateEmployeeCommand : IRequest<int>;
+```
+
+**Answer:**
+
+It represents a request expecting a response of type `int`. MediatR uses this type to determine which handler to invoke.
+
+---
+
+# 7. What is `IRequestHandler<TRequest, TResponse>`?
+
+```csharp
+public class CreateEmployeeCommandHandler
+    : IRequestHandler<CreateEmployeeCommand, int>
+{
+}
+```
+
+**Answer:**
+
+It defines the class responsible for handling a specific request type.
+
+---
+
+# 8. Can one Command have multiple Handlers?
+
+**Answer:**
+
+No.
+
+Each request should have exactly one handler when using `Send()`.
+
+```
+CreateEmployeeCommand
+
+        ↓
+
+CreateEmployeeCommandHandler
+```
+
+Having multiple handlers would make it ambiguous which one should execute.
+
+---
+
+# 9. Can multiple Commands use the same Entity?
+
+**Answer:**
+
+Yes.
+
+```
+Employee
+
+↑
+
+Create
+Update
+Delete
+```
+
+The entity is shared; the command models are separate.
+
+---
+
+# 10. Can multiple Queries use the same DTO?
+
+Yes.
+
+Example:
+
+```
+GetEmployeeById
+
+↓
+
+EmployeeDto
+
+GetEmployeeByEmail
+
+↓
+
+EmployeeDto
+```
+
+If the response shape is identical, reusing the DTO is perfectly fine.
+
+---
+
+# 11. Why shouldn't Queries return Entities?
+
+Example:
+
+```
+Employee
+{
+    Id
+    Name
+    Email
+    Salary
+    PasswordHash
+}
+```
+
+API only needs
+
+```
+EmployeeDto
+{
+    Id
+    Name
+}
+```
+
+Returning entities can expose internal fields and tightly couple the API to the database model.
+
+---
+
+# 12. Why use DTOs?
+
+* Hide sensitive fields
+* Reduce payload size
+* Avoid exposing EF entities
+* Version APIs more easily
+
+---
+
+# 13. Can Commands return data?
+
+Yes, but only what's necessary.
+
+Example:
+
+```
+CreateEmployeeCommand
+
+↓
+
+returns EmployeeId
+```
+
+Avoid returning the full entity after a command.
+
+---
+
+# 14. Can Queries modify data?
+
+No.
+
+Queries should be side-effect free.
+
+Calling `SaveChanges()` inside a query handler violates CQRS principles.
+
+---
+
+# 15. Why is CQRS more testable?
+
+Each handler has a single responsibility.
+
+Example:
+
+```
+Test
+
+↓
+
+CreateEmployeeCommandHandler
+
+↓
+
+Mock DbContext
+```
+
+No need to instantiate large service classes.
+
+---
+
+# 16. Where should validation happen?
+
+Common approaches:
+
+* FluentValidation
+* MediatR Pipeline Behaviors
+* Handler (for business validation)
+
+Avoid putting business validation in controllers.
+
+---
+
+# 17. What are Pipeline Behaviors?
+
+They are middleware for MediatR.
+
+```
+Controller
+
+↓
+
+Validation
+
+↓
+
+Logging
+
+↓
+
+Authorization
+
+↓
+
+Performance
+
+↓
+
+Handler
+```
+
+Cross-cutting concerns are implemented once instead of repeating code in every handler.
+
+---
+
+# 18. Difference between Middleware and Pipeline Behavior?
+
+Middleware
+
+```
+HTTP Request
+
+↓
+
+Authentication
+
+↓
+
+Routing
+
+↓
+
+Controller
+```
+
+Pipeline Behavior
+
+```
+Controller
+
+↓
+
+Mediator
+
+↓
+
+Validation
+
+↓
+
+Handler
+```
+
+Middleware works at the HTTP request level, while pipeline behaviors work around MediatR requests.
+
+---
+
+# 19. What is the advantage of CQRS?
+
+* Better separation of concerns
+* Easier maintenance
+* Easier testing
+* Independent read/write optimization
+* Cleaner business logic
+* Fits well with Clean Architecture
+
+---
+
+# 20. What are the disadvantages?
+
+* More classes
+* More files
+* More complexity
+* Overkill for simple CRUD applications
+
+---
+
+# 21. When should CQRS NOT be used?
+
+Don't use it for:
+
+* Small CRUD apps
+* Admin panels
+* Simple internal tools
+* Applications with very little business logic
+
+---
+
+# 22. Does CQRS require two databases?
+
+No.
+
+You can use:
+
+```
+Commands
+
+↓
+
+SQL Server
+
+Queries
+
+↓
+
+SQL Server
+```
+
+The same database is perfectly valid.
+
+For very large systems, separate read and write databases may be introduced.
+
+---
+
+# 23. What is Eventual Consistency?
+
+If writes go to one database and reads come from another (read replica), there may be a short delay before the latest changes appear in query results. This temporary lag is called eventual consistency.
+
+---
+
+# 24. How is CQRS used with Clean Architecture?
+
+```
+API
+
+↓
+
+Application
+    Commands
+    Queries
+    Handlers
+
+↓
+
+Domain
+
+↓
+
+Infrastructure
+```
+
+Commands and Queries belong in the **Application** layer, while Infrastructure contains EF Core and database implementations.
+
+---
+
+# 25. Difference between CQRS and Mediator?
+
+Many candidates confuse these.
+
+| CQRS                       | MediatR                              |
+| -------------------------- | ------------------------------------ |
+| Architectural pattern      | .NET library                         |
+| Separates reads and writes | Implements the Mediator pattern      |
+| Can exist without MediatR  | Helps implement CQRS but is optional |
+
+**Example:** You can implement CQRS without MediatR by calling handlers directly, but MediatR simplifies request routing and decoupling.
+
+---
+
+# 26. Can you use CQRS without MediatR?
+
+Yes.
+
+You could manually instantiate or inject handlers and invoke them directly:
+
+```csharp
+var handler = new CreateEmployeeCommandHandler(context);
+await handler.Handle(command, CancellationToken.None);
+```
+
+MediatR simply automates the routing and keeps the controller unaware of the concrete handler.
+
+---
+
+# 27. Scenario-Based Question
+
+**Interviewer:** *You have a `CreateOrderCommand`. After saving the order, you need to send an email and write an audit log. How would you implement it?*
+
+**Good answer:**
+
+* Keep the command handler responsible for creating the order.
+* Use injected services (e.g., `IEmailService`, `IAuditService`) if these actions are part of the same transaction/business process.
+* If these are independent side effects, publish a notification/event after the order is created, and let separate notification handlers send the email and write the audit log.
+
+This keeps the command handler focused and avoids mixing unrelated responsibilities.
+
+---
+
+## Common Mistakes to Avoid in Interviews
+
+❌ "CQRS means two databases."
+
+✅ No. Two databases are optional.
+
+❌ "Queries can update data."
+
+✅ Queries should not modify state.
+
+❌ "MediatR is CQRS."
+
+✅ MediatR is a library that helps implement CQRS.
+
+❌ "Each entity should have only one command."
+
+✅ An entity can have many commands (`Create`, `Update`, `Delete`, `Activate`, etc.).
+
+❌ "CQRS is required for every project."
+
+✅ It's most beneficial for applications with complex business logic; for simple CRUD applications, it often adds unnecessary complexity.
+
+These are the kinds of questions commonly asked for **5–8 years .NET Developer** interviews at companies such as Deloitte, Accenture, Cognizant, Capgemini, EPAM, LTIMindtree, BNY, and product-based organizations.
