@@ -577,3 +577,532 @@ This prevents duplicate payments, duplicate emails, or duplicate inventory reser
 > "In Azure-based .NET microservices, I typically use an event-driven architecture with Azure Service Bus. The API performs its core business transaction, commits the database changes, and then publishes an event such as `OrderCreated`. Services like Inventory, Payment, Notification, and Analytics subscribe to that event and process it independently using Azure Functions or Worker Services. This keeps services loosely coupled, improves scalability, and allows failures to be isolated. I also implement retries, dead-letter queues, and idempotent consumers to handle duplicate deliveries and transient failures reliably."
 
 This is the architecture most interviewers expect when discussing **asynchronous microservices on Azure**.
+
+
+Idempotency is one of the **most frequently asked concepts** in microservices interviews because **Azure Service Bus, RabbitMQ, Kafka, and SQS all provide *at least once* delivery**. That means **the same message may be delivered more than once**, so your consumer must safely handle duplicates.
+
+Let's implement it step by step using **.NET 8 + Azure Service Bus + EF Core + SQL Server**.
+
+---
+
+# Scenario
+
+Suppose your Order Service publishes:
+
+```json
+{
+  "MessageId": "7f4f51b5-2f90-4d27-a317-c6d7d3d21a90",
+  "OrderId": 1001,
+  "CustomerId": 5,
+  "Amount": 2500
+}
+```
+
+Payment Service receives it.
+
+Now imagine this happens:
+
+```
+Receive Message
+
+↓
+
+Payment Successful
+
+↓
+
+Save Payment
+
+↓
+
+Application crashes ❌
+
+↓
+
+Azure Service Bus never receives Complete()
+
+↓
+
+Service Bus delivers message again
+```
+
+Without idempotency:
+
+```
+Payment #1
+
+↓
+
+Payment #2
+
+↓
+
+Customer charged twice ❌
+```
+
+---
+
+# Solution
+
+Maintain a table that tracks processed messages.
+
+```
+ProcessedMessages
+
+----------------------------------------
+
+MessageId
+
+ProcessedDate
+```
+
+If a message already exists:
+
+```
+Ignore it.
+```
+
+---
+
+# Step 1 - Entity
+
+```csharp
+public class ProcessedMessage
+{
+    public Guid MessageId { get; set; }
+
+    public DateTime ProcessedOnUtc { get; set; }
+}
+```
+
+---
+
+# Step 2 - DbContext
+
+```csharp
+public class PaymentDbContext : DbContext
+{
+    public DbSet<ProcessedMessage> ProcessedMessages => Set<ProcessedMessage>();
+
+    public DbSet<Payment> Payments => Set<Payment>();
+}
+```
+
+---
+
+# Step 3 - Create Unique Index
+
+```csharp
+protected override void OnModelCreating(ModelBuilder builder)
+{
+    builder.Entity<ProcessedMessage>()
+        .HasKey(x => x.MessageId);
+}
+```
+
+or SQL
+
+```sql
+CREATE TABLE ProcessedMessages
+(
+    MessageId UNIQUEIDENTIFIER PRIMARY KEY,
+    ProcessedOnUtc DATETIME2 NOT NULL
+)
+```
+
+The primary key guarantees uniqueness.
+
+---
+
+# Step 4 - Event
+
+```csharp
+public class OrderCreatedEvent
+{
+    public Guid MessageId { get; set; }
+
+    public int OrderId { get; set; }
+
+    public decimal Amount { get; set; }
+
+    public int CustomerId { get; set; }
+}
+```
+
+---
+
+# Step 5 - Azure Function Consumer
+
+```csharp
+public class PaymentConsumer
+{
+    private readonly PaymentDbContext _db;
+
+    public PaymentConsumer(PaymentDbContext db)
+    {
+        _db = db;
+    }
+
+    [Function("ProcessPayment")]
+    public async Task Run(
+        [ServiceBusTrigger("orders")]
+        OrderCreatedEvent message)
+    {
+        // Check duplicate
+
+        bool alreadyProcessed =
+            await _db.ProcessedMessages
+                .AnyAsync(x => x.MessageId == message.MessageId);
+
+        if (alreadyProcessed)
+        {
+            return;
+        }
+
+        var payment = new Payment
+        {
+            OrderId = message.OrderId,
+            Amount = message.Amount
+        };
+
+        _db.Payments.Add(payment);
+
+        _db.ProcessedMessages.Add(
+            new ProcessedMessage
+            {
+                MessageId = message.MessageId,
+                ProcessedOnUtc = DateTime.UtcNow
+            });
+
+        await _db.SaveChangesAsync();
+    }
+}
+```
+
+Works...
+
+But there is still a problem.
+
+---
+
+# Race Condition
+
+Imagine two consumers receive the same message almost simultaneously.
+
+```
+Consumer A
+
+↓
+
+Checks DB
+
+↓
+
+Not Found
+```
+
+At exactly the same time
+
+```
+Consumer B
+
+↓
+
+Checks DB
+
+↓
+
+Not Found
+```
+
+Both continue.
+
+Now both insert payment.
+
+Duplicate payment.
+
+---
+
+# Better Solution
+
+Everything should be inside one transaction.
+
+```csharp
+await using var transaction =
+    await _db.Database.BeginTransactionAsync();
+```
+
+Now:
+
+```csharp
+try
+{
+    ...
+
+    await _db.SaveChangesAsync();
+
+    await transaction.CommitAsync();
+}
+catch
+{
+    await transaction.RollbackAsync();
+}
+```
+
+Still not perfect.
+
+Why?
+
+Both consumers may still pass the `AnyAsync()` check before either commits.
+
+---
+
+# Production Solution
+
+Instead of:
+
+```
+Check
+
+↓
+
+Insert
+```
+
+Simply:
+
+```
+Insert
+
+↓
+
+If duplicate key
+
+↓
+
+Ignore
+```
+
+The database becomes the source of truth.
+
+---
+
+## Code
+
+```csharp
+try
+{
+    _db.ProcessedMessages.Add(
+        new ProcessedMessage
+        {
+            MessageId = message.MessageId,
+            ProcessedOnUtc = DateTime.UtcNow
+        });
+
+    await _db.SaveChangesAsync();
+}
+catch (DbUpdateException)
+{
+    // Duplicate message
+
+    return;
+}
+```
+
+Now only one consumer succeeds.
+
+The second gets
+
+```
+Violation of PRIMARY KEY
+```
+
+and exits safely.
+
+---
+
+# Even Better
+
+Wrap payment + processed message in one transaction.
+
+```csharp
+await using var transaction =
+    await _db.Database.BeginTransactionAsync();
+
+try
+{
+    _db.ProcessedMessages.Add(
+        new ProcessedMessage
+        {
+            MessageId = message.MessageId,
+            ProcessedOnUtc = DateTime.UtcNow
+        });
+
+    _db.Payments.Add(
+        new Payment
+        {
+            OrderId = message.OrderId,
+            Amount = message.Amount
+        });
+
+    await _db.SaveChangesAsync();
+
+    await transaction.CommitAsync();
+}
+catch (DbUpdateException)
+{
+    await transaction.RollbackAsync();
+
+    // duplicate
+
+    return;
+}
+```
+
+Now either:
+
+```
+Payment
+
++
+
+ProcessedMessage
+
+```
+
+are both committed
+
+OR
+
+nothing is.
+
+---
+
+# Better Architecture
+
+Instead of putting idempotency logic in every consumer, create a reusable service.
+
+```csharp
+public interface IIdempotencyService
+{
+    Task<bool> HasProcessedAsync(Guid messageId);
+
+    Task MarkProcessedAsync(Guid messageId);
+}
+```
+
+Implementation:
+
+```csharp
+public class IdempotencyService : IIdempotencyService
+{
+    private readonly PaymentDbContext _db;
+
+    public IdempotencyService(PaymentDbContext db)
+    {
+        _db = db;
+    }
+
+    public async Task<bool> HasProcessedAsync(Guid messageId)
+    {
+        return await _db.ProcessedMessages
+            .AnyAsync(x => x.MessageId == messageId);
+    }
+
+    public async Task MarkProcessedAsync(Guid messageId)
+    {
+        _db.ProcessedMessages.Add(
+            new ProcessedMessage
+            {
+                MessageId = messageId,
+                ProcessedOnUtc = DateTime.UtcNow
+            });
+
+        await _db.SaveChangesAsync();
+    }
+}
+```
+
+Every consumer can use it.
+
+---
+
+# Enterprise Pattern (Inbox Pattern)
+
+Many enterprise systems implement the **Inbox Pattern**.
+
+```
+Azure Service Bus
+
+↓
+
+Consumer
+
+↓
+
+Inbox Table
+
+↓
+
+Business Logic
+
+↓
+
+Commit
+
+↓
+
+Complete Message
+```
+
+The Inbox table stores every received message. If the message already exists, it's skipped. This provides reliable idempotent processing and is widely used with EF Core and SQL Server.
+
+---
+
+# Interview Question
+
+**Interviewer:** *Why not just use `AnyAsync()` before processing?*
+
+**Good Answer:**
+
+> "`AnyAsync()` is not sufficient because two consumers may read the database before either inserts the record, creating a race condition. The correct approach is to enforce uniqueness with a database primary key or unique index and treat the insert as the idempotency check. This guarantees correctness even with concurrent consumers. Ideally, the idempotency record and the business update are committed in the same transaction."
+
+---
+
+# Production-Grade Flow
+
+```text
+Azure Service Bus
+        │
+        ▼
+Receive Message
+        │
+        ▼
+Begin SQL Transaction
+        │
+        ▼
+Insert ProcessedMessage (PK = MessageId)
+        │
+        ├── Duplicate Key?
+        │      │
+        │      └── Yes → Rollback → Acknowledge/Exit
+        │
+        ▼
+Execute Business Logic
+(Create Payment / Update Order)
+        │
+        ▼
+SaveChanges()
+        │
+        ▼
+Commit Transaction
+        │
+        ▼
+Complete Service Bus Message
+```
+
+### Additional Interview Tip
+
+If the interviewer asks, **"Is storing `MessageId` enough?"**, you can answer:
+
+> "It's sufficient if the producer generates a globally unique `MessageId` and reuses it on retries. In some business scenarios, it's even better to use a business key such as `OrderId` plus an operation type, because that prevents duplicate business actions even if a new message is accidentally published with a different `MessageId`."
