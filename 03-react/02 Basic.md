@@ -1567,3 +1567,755 @@ Use:
 
 These are exactly the kinds of discussions interviewers use to assess senior React developers. In total, you now have **180 React interview questions**. The next batch (181–220) would cover **TypeScript with React, React Hook Form, Testing (Jest & React Testing Library), accessibility, WebSockets/SignalR, authentication flows, and advanced system design scenarios**, which are also common in senior React interviews.
 
+Excellent. This batch (**181–220**) covers **TypeScript + React**, **React Hook Form**, **Authentication**, **Testing**, and **Real Enterprise Interview Questions**. These are frequently asked in companies like Microsoft, JPMorgan, Goldman Sachs, EPAM, BNY, Deloitte, Accenture, Infosys, and TCS Digital.
+
+---
+
+# React + TypeScript (181–195)
+
+---
+
+# 181. Why use TypeScript in React?
+
+### Answer
+
+Benefits:
+
+* Type Safety
+* Better IntelliSense
+* Compile-time errors
+* Easier refactoring
+* Better documentation
+* Reduces runtime bugs
+
+---
+
+# 182. Define Props Interface
+
+```tsx
+interface UserProps {
+    name: string;
+    age: number;
+}
+
+function User({ name, age }: UserProps) {
+    return (
+        <>
+            <h2>{name}</h2>
+            <p>{age}</p>
+        </>
+    );
+}
+```
+
+---
+
+# 183. Optional Props
+
+```tsx
+interface ButtonProps {
+    title: string;
+    disabled?: boolean;
+}
+```
+
+Usage
+
+```tsx
+<Button title="Save" />
+```
+
+---
+
+# 184. Typing useState
+
+```tsx
+const [count, setCount] = useState<number>(0);
+```
+
+Object
+
+```tsx
+interface User {
+    id: number;
+    name: string;
+}
+
+const [user, setUser] = useState<User | null>(null);
+```
+
+---
+
+# 185. Typing useRef
+
+```tsx
+const inputRef = useRef<HTMLInputElement>(null);
+```
+
+Focus
+
+```tsx
+inputRef.current?.focus();
+```
+
+---
+
+# 186. Typing Events
+
+```tsx
+const handleChange = (
+    e: React.ChangeEvent<HTMLInputElement>
+) => {
+    console.log(e.target.value);
+};
+```
+
+---
+
+# 187. Typing API Response
+
+```tsx
+interface Product {
+    id: number;
+    name: string;
+}
+
+const [products, setProducts] =
+    useState<Product[]>([]);
+```
+
+---
+
+# 188. Generic Component
+
+```tsx
+interface TableProps<T> {
+    data: T[];
+}
+
+function Table<T>({ data }: TableProps<T>) {
+    return <div>{data.length}</div>;
+}
+```
+
+---
+
+# 189. Typing Children
+
+```tsx
+interface LayoutProps {
+    children: React.ReactNode;
+}
+```
+
+---
+
+# 190. Union Types
+
+```tsx
+type Status =
+    | "Loading"
+    | "Success"
+    | "Failed";
+```
+
+---
+
+# 191. Enum
+
+```tsx
+enum UserRole {
+    Admin,
+    User,
+    Manager
+}
+```
+
+---
+
+# 192. Record Type
+
+```tsx
+const permissions:
+Record<string, boolean> = {
+
+Admin: true,
+
+User: false
+
+};
+```
+
+---
+
+# 193. Partial
+
+```tsx
+interface User{
+
+name:string;
+
+age:number;
+
+}
+```
+
+```tsx
+Partial<User>
+```
+
+Makes
+
+all properties optional.
+
+---
+
+# 194. Pick
+
+```tsx
+type UserSummary =
+
+Pick<User,"name"|"age">;
+```
+
+---
+
+# 195. Omit
+
+```tsx
+type PublicUser =
+
+Omit<User,"password">;
+```
+
+---
+
+# React Hook Form (196–205)
+
+---
+
+# 196. Why React Hook Form?
+
+Benefits
+
+* Better performance
+* Less re-rendering
+* Built-in validation
+* Easy integration
+
+---
+
+# 197. Basic Example
+
+```tsx
+const {
+
+register,
+
+handleSubmit
+
+}=useForm();
+
+return(
+
+<form onSubmit={handleSubmit(console.log)}>
+
+<input
+
+{...register("name")}
+
+/>
+
+<button>
+
+Save
+
+</button>
+
+</form>
+
+);
+```
+
+---
+
+# 198. Required Validation
+
+```tsx
+<input
+
+{...register(
+
+"email",
+
+{
+
+required:true
+
+}
+
+)}
+
+/>
+```
+
+---
+
+# 199. Pattern Validation
+
+```tsx
+register("email",{
+
+pattern:
+
+/^\S+@\S+$/
+
+});
+```
+
+---
+
+# 200. Display Error
+
+```tsx
+{
+
+errors.email &&
+
+<p>
+
+Invalid Email
+
+</p>
+
+}
+```
+
+---
+
+# 201. Default Values
+
+```tsx
+const{
+
+register
+
+}=useForm({
+
+defaultValues:{
+
+name:"Pankaj"
+
+}
+
+});
+```
+
+---
+
+# 202. Reset Form
+
+```tsx
+reset();
+```
+
+---
+
+# 203. Controller Example
+
+Material UI
+
+```tsx
+<Controller
+
+name="city"
+
+control={control}
+
+render={({field})=>
+
+<TextField
+
+{...field}
+
+/>
+
+}
+
+/>
+```
+
+---
+
+# 204. Watch Field
+
+```tsx
+const password=
+
+watch("password");
+```
+
+---
+
+# 205. Trigger Validation
+
+```tsx
+await trigger();
+```
+
+---
+
+# Authentication (206–212)
+
+---
+
+# 206. JWT Flow
+
+```text
+Login
+
+↓
+
+API
+
+↓
+
+Access Token
+
+↓
+
+React
+
+↓
+
+Authorization Header
+
+↓
+
+.NET API
+```
+
+---
+
+# 207. Axios Authorization
+
+```tsx
+axios.interceptors.request.use(
+
+config=>{
+
+config.headers.Authorization=
+
+`Bearer ${token}`;
+
+return config;
+
+});
+```
+
+---
+
+# 208. Refresh Token
+
+Flow
+
+```text
+Access Token Expired
+
+↓
+
+401
+
+↓
+
+Refresh Token
+
+↓
+
+New Token
+
+↓
+
+Retry Request
+```
+
+---
+
+# 209. Protected Route
+
+```tsx
+function ProtectedRoute({
+
+children
+
+}){
+
+return token
+
+? children
+
+: <Navigate to="/login"/>;
+
+}
+```
+
+---
+
+# 210. Role-Based Authorization
+
+```tsx
+if(user.role!=="Admin"){
+
+return <AccessDenied/>;
+
+}
+```
+
+---
+
+# 211. Logout
+
+```tsx
+localStorage.removeItem(
+
+"token"
+
+);
+
+navigate("/login");
+```
+
+---
+
+# 212. Auto Logout
+
+```tsx
+setTimeout(()=>{
+
+logout();
+
+},tokenExpiry);
+```
+
+---
+
+# Testing (213–220)
+
+---
+
+# 213. What is Jest?
+
+JavaScript testing framework.
+
+---
+
+# 214. React Testing Library
+
+Focuses on
+
+testing
+
+user behavior
+
+instead of
+
+implementation details.
+
+---
+
+# 215. Render Test
+
+```tsx
+render(<Login/>);
+
+expect(
+
+screen.getByText("Login")
+
+).toBeInTheDocument();
+```
+
+---
+
+# 216. Button Click
+
+```tsx
+fireEvent.click(
+
+screen.getByText("Save")
+
+);
+```
+
+---
+
+# 217. User Event
+
+```tsx
+await userEvent.type(
+
+input,
+
+"Pankaj"
+
+);
+```
+
+---
+
+# 218. Mock API
+
+```tsx
+jest.mock(
+
+"./api"
+
+);
+```
+
+---
+
+# 219. Wait For Async
+
+```tsx
+await waitFor(()=>{
+
+expect(
+
+screen.getByText(
+
+"Users"
+
+)
+
+).toBeInTheDocument();
+
+});
+```
+
+---
+
+# 220. Test Form
+
+```tsx
+userEvent.type(
+
+input,
+
+"John"
+
+);
+
+userEvent.click(
+
+button
+
+);
+
+expect(
+
+submit
+
+).toHaveBeenCalled();
+```
+
+---
+
+# ⭐ Senior Scenario Questions (Very Common)
+
+## Q221. How would you implement login in a React + .NET application?
+
+**Expected Answer**
+
+Architecture:
+
+```text
+React Login Page
+        │
+        ▼
+Axios POST /login
+        │
+        ▼
+.NET Web API
+        │
+        ▼
+JWT + Refresh Token
+        │
+        ▼
+React Stores Token
+        │
+        ▼
+Axios Interceptor Adds Authorization Header
+        │
+        ▼
+Protected APIs
+```
+
+Mention:
+
+* Access Token
+* Refresh Token
+* Protected Routes
+* Role-based Authorization
+* Auto Logout
+* Axios Interceptors
+
+---
+
+## Q222. How do you handle API errors globally?
+
+```tsx
+axios.interceptors.response.use(
+    response => response,
+    error => {
+        if (error.response?.status === 401) {
+            // redirect to login or refresh token
+        }
+
+        return Promise.reject(error);
+    }
+);
+```
+
+---
+
+## Q223. How do you organize a large React application?
+
+```text
+src/
+│
+├── components/
+├── pages/
+├── layouts/
+├── hooks/
+├── services/
+├── api/
+├── redux/
+├── context/
+├── routes/
+├── types/
+├── utils/
+├── assets/
+└── tests/
+```
+
+---
+
+## Q224. What would you improve in an enterprise React application?
+
+* Use TypeScript
+* Redux Toolkit for global state
+* TanStack Query for server state
+* React Hook Form for forms
+* Lazy loading and code splitting
+* Error Boundaries
+* Centralized API service
+* Reusable UI components
+* Unit and integration tests
+* ESLint + Prettier
+* Environment-specific configuration
+* Performance profiling
+
+---
+
+This completes **Batch 181–220**. The next batch (**221–260**) can focus on **React System Design, advanced performance optimization, SignalR/WebSockets, micro-frontends, accessibility (WCAG), React internals, and real interview scenarios**, which are especially valuable for senior full-stack interviews.
