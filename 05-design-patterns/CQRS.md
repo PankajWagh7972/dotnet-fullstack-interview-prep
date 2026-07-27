@@ -937,3 +937,262 @@ The controller doesn't need to know *who* performs the work—it simply hands th
 If asked, **"How does MediatR work internally?"**, you can answer:
 
 > "MediatR implements the Mediator pattern. Controllers send commands or queries using `IMediator.Send()`. At application startup, MediatR scans the registered assemblies and registers all `IRequestHandler<TRequest, TResponse>` implementations in the dependency injection container. When `Send()` is called, MediatR resolves the appropriate handler from DI based on the request type, executes any configured pipeline behaviors (such as validation or logging), invokes the handler's `Handle()` method, and returns the handler's response back to the controller. This keeps controllers decoupled from business logic and makes the application easier to maintain and test."
+
+
+Good question. **No, CQRS does *not* mean you cannot reuse the same model.** It depends on what you mean by "model."
+
+There are several types of models in a .NET application:
+
+1. **Domain Entity** (EF Core entity)
+2. **Command model**
+3. **Query model (DTO)**
+4. **View model/API model**
+
+Let's look at each one.
+
+---
+
+## 1. Domain Entity (Can be reused)
+
+Suppose you have an `Employee` entity:
+
+```csharp
+public class Employee
+{
+    public int Id { get; set; }
+    public string Name { get; set; }
+    public string Email { get; set; }
+    public decimal Salary { get; set; }
+}
+```
+
+This same entity can be used by multiple command handlers.
+
+### CreateEmployeeCommandHandler
+
+```csharp
+var employee = new Employee
+{
+    Name = request.Name,
+    Email = request.Email,
+    Salary = request.Salary
+};
+
+_context.Employees.Add(employee);
+```
+
+### UpdateEmployeeCommandHandler
+
+```csharp
+var employee = await _context.Employees.FindAsync(request.Id);
+
+employee.Name = request.Name;
+employee.Email = request.Email;
+
+await _context.SaveChangesAsync();
+```
+
+Both handlers use the **same `Employee` entity**.
+
+---
+
+## 2. Commands (Usually not reused)
+
+Commands represent a **specific business action**.
+
+For example:
+
+```csharp
+public record CreateEmployeeCommand(
+    string Name,
+    string Email,
+    decimal Salary
+);
+```
+
+Another command:
+
+```csharp
+public record UpdateEmployeeCommand(
+    int Id,
+    string Name,
+    string Email
+);
+```
+
+Even though both contain `Name` and `Email`, they represent different operations.
+
+**Why separate them?**
+
+* Create doesn't need `Id`.
+* Update requires `Id`.
+* Validation rules may differ.
+
+For example:
+
+### Create
+
+```text
+Name ✔
+Email ✔
+Salary ✔
+```
+
+### Update
+
+```text
+Id ✔
+Name ✔
+Email ✔
+Salary optional
+```
+
+So it's better to keep them separate.
+
+---
+
+## 3. Query Models (DTOs)
+
+Queries often return only the data the client needs.
+
+Database entity:
+
+```csharp
+Employee
+{
+    Id
+    Name
+    Email
+    Salary
+    PasswordHash
+    CreatedDate
+}
+```
+
+API response:
+
+```csharp
+EmployeeDto
+{
+    Id
+    Name
+    Email
+}
+```
+
+You don't expose `PasswordHash` or other internal fields.
+
+---
+
+## Can one command be used by multiple handlers?
+
+**No.**
+
+Each request type should have **one handler**.
+
+For example:
+
+```csharp
+public record CreateEmployeeCommand(...)
+```
+
+Handled by:
+
+```csharp
+CreateEmployeeCommandHandler
+```
+
+Not:
+
+```text
+CreateEmployeeCommand
+       |
+       +--> Handler A ❌
+       |
+       +--> Handler B ❌
+```
+
+Instead:
+
+```text
+CreateEmployeeCommand
+        |
+        V
+CreateEmployeeCommandHandler ✅
+```
+
+This one-to-one relationship is how `IMediator.Send()` works.
+
+---
+
+## Can multiple commands use the same Entity?
+
+**Yes.** This is very common.
+
+```text
+                Employee Entity
+                     ▲
+                     │
+      ┌──────────────┼──────────────┐
+      │              │              │
+      │              │              │
+CreateEmployee   UpdateEmployee   DeleteEmployee
+   Command          Command          Command
+      │              │              │
+      ▼              ▼              ▼
+CreateHandler   UpdateHandler   DeleteHandler
+```
+
+All three handlers work with the same `Employee` entity.
+
+---
+
+## Can multiple commands share common code?
+
+Yes. If multiple handlers need the same logic, move that logic into a service.
+
+Example:
+
+```csharp
+public class EmployeeValidator
+{
+    public bool IsEmailUnique(string email)
+    {
+        // validation logic
+    }
+}
+```
+
+Inject it into multiple handlers:
+
+```csharp
+public class CreateEmployeeCommandHandler
+{
+    private readonly EmployeeValidator _validator;
+}
+
+public class UpdateEmployeeCommandHandler
+{
+    private readonly EmployeeValidator _validator;
+}
+```
+
+This avoids duplicating business logic while keeping each handler focused on a single use case.
+
+---
+
+## Summary
+
+| Component                        | Can it be reused? | Example                                                                |
+| -------------------------------- | ----------------- | ---------------------------------------------------------------------- |
+| **Entity (Employee)**            | ✅ Yes             | Used by Create, Update, Delete handlers                                |
+| **Command**                      | ❌ Usually no      | `CreateEmployeeCommand` is only for creating                           |
+| **Query**                        | ❌ Usually no      | `GetEmployeeByIdQuery` is only for fetching by ID                      |
+| **DTO**                          | ✅ Sometimes       | Same response DTO can be used by multiple queries if the shape matches |
+| **Business Services/Validators** | ✅ Yes             | Shared across multiple handlers                                        |
+
+### Interview Tip
+
+If an interviewer asks, **"Can we reuse the same model in CQRS?"**, a strong answer is:
+
+> "Yes, the domain entity can absolutely be reused across multiple command and query handlers. What CQRS separates are the request models—commands and queries—because each represents a specific use case with its own validation and intent. The `Employee` entity may be shared by Create, Update, and Delete handlers, while each operation has its own command object such as `CreateEmployeeCommand` or `UpdateEmployeeCommand`."
