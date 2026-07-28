@@ -939,3 +939,397 @@ public class QueueWorker : BackgroundService
 # Interview Answer (Senior Level)
 
 > In modern ASP.NET Core applications, I use `Task` and `async/await` for almost all application work—database access, HTTP calls, file I/O, background jobs, and parallel operations—because they scale efficiently with the ThreadPool and avoid blocking threads. I would choose a dedicated `Thread` only when I need explicit thread-level control, such as long-running hardware communication, custom thread priority, or thread affinity. For most server-side background processing, I prefer `BackgroundService` over creating raw threads because it integrates with the hosting lifecycle, dependency injection, and cancellation.
+
+
+This is another favorite **senior .NET interview question** because many candidates confuse **Concurrency**, **Parallelism**, **Multitasking**, and **Multithreading**.
+
+The key is that **they are not the same thing**.
+
+| Concept        | Meaning                                                  | Multiple Threads Required? | Multiple CPU Cores Required?              |
+| -------------- | -------------------------------------------------------- | -------------------------- | ----------------------------------------- |
+| Concurrency    | Multiple tasks make progress during the same period      | Not necessarily            | No                                        |
+| Parallelism    | Multiple tasks execute at exactly the same time          | Yes                        | Yes (or equivalent hardware support)      |
+| Multithreading | Using multiple threads in one process                    | Yes                        | No                                        |
+| Multitasking   | OS runs multiple applications seemingly at the same time | Yes (managed by OS)        | No (can be single-core with time slicing) |
+
+---
+
+# 1. What is Concurrency?
+
+Concurrency means **handling multiple tasks that overlap in time**.
+
+It does **not** mean they are executing simultaneously.
+
+Example:
+
+```text
+Time →
+
+Task A: ███     ███      ███
+
+Task B:     ███      ███
+
+Task C:          ███
+```
+
+The CPU switches between tasks.
+
+Only one task may actually be executing at any instant on a single CPU core.
+
+### Example in .NET
+
+```csharp
+public async Task<IActionResult> GetData()
+{
+    var userTask = GetUserAsync();
+    var orderTask = GetOrdersAsync();
+
+    await Task.WhenAll(userTask, orderTask);
+
+    return Ok();
+}
+```
+
+While one request waits for I/O, another can make progress.
+
+---
+
+# 2. What is Parallelism?
+
+Parallelism means **multiple tasks are executing at the exact same moment**.
+
+Requires multiple CPU cores (or equivalent execution resources).
+
+```text
+Core 1
+
+Task A █████████
+
+Core 2
+
+Task B █████████
+
+Core 3
+
+Task C █████████
+```
+
+### Example
+
+```csharp
+Parallel.For(0, 1000, i =>
+{
+    ProcessImage(i);
+});
+```
+
+Different images can be processed simultaneously.
+
+---
+
+# 3. What is Multithreading?
+
+Multithreading means a process contains multiple threads.
+
+Example:
+
+```text
+Application
+
+├── Thread 1
+├── Thread 2
+├── Thread 3
+└── Thread 4
+```
+
+Example:
+
+```csharp
+Thread t1 = new Thread(PrintNumbers);
+Thread t2 = new Thread(PrintLetters);
+
+t1.Start();
+t2.Start();
+```
+
+Now the application has multiple threads.
+
+Those threads may execute concurrently or in parallel depending on the hardware and scheduler.
+
+---
+
+# 4. What is Multitasking?
+
+Multitasking is an **operating system feature**.
+
+Example:
+
+```text
+Chrome
+
+Visual Studio
+
+Spotify
+
+Outlook
+```
+
+All appear to run simultaneously.
+
+The operating system rapidly switches CPU time between them.
+
+---
+
+# Restaurant Analogy
+
+## Concurrency
+
+One chef prepares multiple dishes.
+
+```text
+Dish A
+
+↓
+
+Dish B
+
+↓
+
+Dish A
+
+↓
+
+Dish C
+
+↓
+
+Dish B
+```
+
+The chef alternates between dishes.
+
+---
+
+## Parallelism
+
+Three chefs cook three dishes simultaneously.
+
+```text
+Chef 1 → Pizza
+
+Chef 2 → Pasta
+
+Chef 3 → Soup
+```
+
+Everything progresses at the same time.
+
+---
+
+## Multithreading
+
+One restaurant hires four chefs.
+
+Those chefs are the threads.
+
+---
+
+## Multitasking
+
+The restaurant, supermarket, and bakery are all operating at the same time.
+
+The city (OS) allocates resources to each business.
+
+---
+
+# Real ASP.NET Core Example
+
+Suppose 500 users call your API.
+
+```text
+500 Requests
+
+↓
+
+ASP.NET Core
+
+↓
+
+Tasks Created
+
+↓
+
+ThreadPool
+
+↓
+
+Database
+```
+
+When waiting for SQL Server,
+
+the thread is released,
+
+allowing other requests to execute.
+
+This is **concurrency**, not necessarily parallelism.
+
+---
+
+# Example: Concurrency Without Multiple Threads
+
+```csharp
+public async Task Demo()
+{
+    Console.WriteLine("Start");
+
+    await Task.Delay(5000);
+
+    Console.WriteLine("End");
+}
+```
+
+During `Task.Delay`:
+
+* No thread is actively working.
+* The thread returns to the ThreadPool.
+* Other requests can execute.
+
+This is asynchronous concurrency.
+
+---
+
+# Example: Parallel Processing
+
+```csharp
+Parallel.ForEach(files, file =>
+{
+    Compress(file);
+});
+```
+
+If the machine has 8 CPU cores,
+
+multiple files may be compressed simultaneously.
+
+---
+
+# Example: Multithreading
+
+```csharp
+Thread t1 = new Thread(() =>
+{
+    Console.WriteLine("Worker 1");
+});
+
+Thread t2 = new Thread(() =>
+{
+    Console.WriteLine("Worker 2");
+});
+
+t1.Start();
+t2.Start();
+```
+
+The application now has two worker threads.
+
+---
+
+# Example: Multitasking
+
+Your computer is running:
+
+* Visual Studio
+* SQL Server
+* Chrome
+* Teams
+
+The operating system schedules CPU time among these applications.
+
+---
+
+# Interview Trick Question
+
+### Q: Is `async/await` multithreading?
+
+**Answer:**
+
+**No.**
+
+`async/await` is primarily about **asynchronous concurrency**.
+
+It allows work to continue without blocking a thread.
+
+It does **not** create new threads.
+
+---
+
+### Q: Is `Task.WhenAll()` parallel?
+
+**Answer:**
+
+**Not necessarily.**
+
+```csharp
+await Task.WhenAll(
+    GetCustomerAsync(),
+    GetOrdersAsync(),
+    GetPaymentsAsync()
+);
+```
+
+These operations are concurrent.
+
+If they are I/O-bound (database or HTTP calls), they are **not consuming CPU in parallel** while waiting.
+
+If each task performs CPU-intensive work (often using `Task.Run` or `Parallel` APIs), they may execute in parallel.
+
+---
+
+### Q: Can multithreading exist without parallelism?
+
+**Yes.**
+
+Example:
+
+* One CPU core
+* Four threads
+
+The operating system rapidly switches between them.
+
+```text
+Time →
+
+Thread 1
+
+↓
+
+Thread 2
+
+↓
+
+Thread 3
+
+↓
+
+Thread 4
+```
+
+Only one thread executes at a time, but the application is still multithreaded.
+
+---
+
+# Memory Tip
+
+| Concept        | Remember It As                                             |
+| -------------- | ---------------------------------------------------------- |
+| Concurrency    | Multiple tasks making progress during the same time period |
+| Parallelism    | Multiple tasks executing at exactly the same time          |
+| Multithreading | One process uses multiple threads                          |
+| Multitasking   | The operating system runs multiple applications            |
+
+---
+
+# Senior Interview Answer (45 seconds)
+
+> Concurrency is about managing multiple tasks so they can make progress during the same period, even if only one is executing at a time. Parallelism is about executing multiple tasks simultaneously, typically across multiple CPU cores. Multithreading is a programming technique where a single process uses multiple threads, which may run concurrently or in parallel depending on the hardware. Multitasking is an operating system capability that allows multiple applications to run at the same time by scheduling CPU time among them. In ASP.NET Core, I mostly use asynchronous programming with `Task` and `async/await` to achieve scalable concurrency, while I reserve parallel processing for CPU-intensive workloads such as image processing or large data computations.
