@@ -1333,3 +1333,417 @@ Only one thread executes at a time, but the application is still multithreaded.
 # Senior Interview Answer (45 seconds)
 
 > Concurrency is about managing multiple tasks so they can make progress during the same period, even if only one is executing at a time. Parallelism is about executing multiple tasks simultaneously, typically across multiple CPU cores. Multithreading is a programming technique where a single process uses multiple threads, which may run concurrently or in parallel depending on the hardware. Multitasking is an operating system capability that allows multiple applications to run at the same time by scheduling CPU time among them. In ASP.NET Core, I mostly use asynchronous programming with `Task` and `async/await` to achieve scalable concurrency, while I reserve parallel processing for CPU-intensive workloads such as image processing or large data computations.
+
+This is one of the **most important .NET interview topics**. Interviewers often ask:
+
+> **"When do you use async/await, Task.Run(), Parallel.ForEach(), or Thread?"**
+
+The answer depends on whether the work is **I/O-bound** or **CPU-bound**.
+
+---
+
+# I/O-Bound vs CPU-Bound
+
+| Feature                        | I/O-Bound                   | CPU-Bound                                    |
+| ------------------------------ | --------------------------- | -------------------------------------------- |
+| Waiting for external resource? | ✅ Yes                       | ❌ No                                         |
+| Heavy CPU calculation?         | ❌ No                        | ✅ Yes                                        |
+| Use async/await?               | ✅ Yes                       | ❌ Usually no                                 |
+| Use Task.Run()?                | ❌ Usually no                | ✅ Yes (where appropriate)                    |
+| Blocks thread?                 | ❌ No                        | ✅ Yes (CPU is actively working)              |
+| Examples                       | Database, HTTP, File, Email | Image processing, Encryption, PDF generation |
+
+---
+
+# 1. I/O-Bound Operations
+
+These operations spend most of their time **waiting**.
+
+Examples:
+
+* Database query
+* HTTP API call
+* File read/write
+* Email sending
+* Azure Blob Storage
+* Redis
+* SQL Server
+* Network socket
+
+### Example
+
+```csharp
+public async Task<List<User>> GetUsers()
+{
+    return await _context.Users.ToListAsync();
+}
+```
+
+What happens?
+
+```text
+Request
+
+↓
+
+SQL Server Processing
+
+↓
+
+Thread Released
+
+↓
+
+SQL Returns Data
+
+↓
+
+ThreadPool Thread Continues
+
+↓
+
+Response
+```
+
+The thread is **not** busy while SQL Server is processing.
+
+---
+
+## Another Example
+
+```csharp
+public async Task<IActionResult> GetWeather()
+{
+    var result = await httpClient.GetAsync(url);
+
+    return Ok(await result.Content.ReadAsStringAsync());
+}
+```
+
+The application waits for the remote server.
+
+Don't waste a thread doing nothing.
+
+---
+
+## Correct Tools for I/O
+
+✅ async
+
+✅ await
+
+✅ Task
+
+✅ Task.WhenAll()
+
+❌ Don't use Thread
+
+❌ Don't use Task.Run()
+
+---
+
+# Why NOT Task.Run()?
+
+Wrong
+
+```csharp
+await Task.Run(async () =>
+{
+    await _context.Users.ToListAsync();
+});
+```
+
+This adds an unnecessary ThreadPool thread.
+
+Instead
+
+```csharp
+await _context.Users.ToListAsync();
+```
+
+Much better.
+
+---
+
+# 2. CPU-Bound Operations
+
+These operations spend most of their time **using the CPU**.
+
+Examples
+
+* Image resizing
+* Video encoding
+* PDF generation
+* ZIP compression
+* Encryption
+* AI inference
+* Mathematical calculations
+
+---
+
+Example
+
+```csharp
+public void Calculate()
+{
+    for(int i=0;i<100000000;i++)
+    {
+        Math.Sqrt(i);
+    }
+}
+```
+
+Here
+
+CPU is continuously working.
+
+---
+
+# Use Task.Run()
+
+```csharp
+await Task.Run(() =>
+{
+    Calculate();
+});
+```
+
+This moves the CPU-intensive work to a ThreadPool thread.
+
+---
+
+# Parallel Processing
+
+Suppose you have 500 images.
+
+Instead of
+
+```csharp
+foreach(var image in images)
+{
+    Resize(image);
+}
+```
+
+Use
+
+```csharp
+Parallel.ForEach(images, image =>
+{
+    Resize(image);
+});
+```
+
+If the machine has 8 CPU cores,
+
+multiple images are processed simultaneously.
+
+---
+
+# Why async doesn't help CPU work
+
+Wrong
+
+```csharp
+public async Task Calculate()
+{
+    for(int i=0;i<1000000000;i++)
+    {
+        Math.Sqrt(i);
+    }
+}
+```
+
+There is no awaited asynchronous operation.
+
+The CPU is still busy.
+
+Adding `async` doesn't make CPU work faster.
+
+---
+
+# Real ASP.NET Core Example
+
+## Scenario 1: User Login
+
+```text
+Login
+
+↓
+
+SQL Query
+
+↓
+
+JWT Generation
+
+↓
+
+Return
+```
+
+Use
+
+```csharp
+await _context.Users.FirstAsync();
+```
+
+Because SQL is I/O.
+
+---
+
+## Scenario 2: Export 20,000 Records to PDF
+
+```text
+Database
+
+↓
+
+Generate PDF
+
+↓
+
+Compress
+
+↓
+
+Download
+```
+
+Database
+
+```csharp
+var users = await _context.Users.ToListAsync();
+```
+
+PDF Generation
+
+```csharp
+await Task.Run(() =>
+{
+    GeneratePdf(users);
+});
+```
+
+Database → I/O
+
+PDF → CPU
+
+---
+
+# Mixed Example
+
+```csharp
+public async Task<IActionResult> Export()
+{
+    // I/O
+    var users = await _context.Users.ToListAsync();
+
+    // CPU
+    var pdf = await Task.Run(() =>
+    {
+        return GeneratePdf(users);
+    });
+
+    return File(pdf,
+        "application/pdf",
+        "report.pdf");
+}
+```
+
+This is a common pattern in real applications.
+
+---
+
+# Decision Flow
+
+```text
+Is the operation waiting for
+Database/File/API/Network?
+
+        │
+      Yes
+        │
+        ▼
+Use async/await
+
+        │
+        No
+        │
+        ▼
+Is it using CPU heavily?
+
+        │
+      Yes
+        │
+        ▼
+Use Task.Run() or Parallel APIs
+```
+
+---
+
+# Common Interview Questions
+
+### Q1: Should I use `Task.Run()` for EF Core?
+
+❌ No.
+
+```csharp
+await _context.Users.ToListAsync();
+```
+
+EF Core already provides asynchronous APIs.
+
+---
+
+### Q2: Should I use `Task.Run()` for HTTP calls?
+
+❌ No.
+
+```csharp
+await httpClient.GetAsync(url);
+```
+
+HTTP calls are already asynchronous.
+
+---
+
+### Q3: Should I use `Task.Run()` for image processing?
+
+✅ Yes.
+
+```csharp
+await Task.Run(() =>
+{
+    ResizeImage();
+});
+```
+
+---
+
+### Q4: Should I use `Parallel.ForEach()` for database queries?
+
+Usually **no**.
+
+Launching many database queries in parallel can overwhelm your database, increase connection usage, and reduce overall throughput. If you genuinely need concurrent queries, do it deliberately with limits (for example, a semaphore) and only after measuring the impact.
+
+---
+
+### Q5: Should I use `Parallel.ForEach()` for image processing?
+
+✅ Yes.
+
+Each image is independent and CPU-intensive.
+
+```csharp
+Parallel.ForEach(images, image =>
+{
+    Resize(image);
+});
+```
+
+---
+
+# Senior Interview Answer
+
+> For **I/O-bound operations** like database queries, HTTP calls, file access, or Azure Blob Storage, I use `async`/`await` with asynchronous APIs because the thread is released while waiting for the external resource, improving scalability. I don't wrap these operations in `Task.Run()` because they're already asynchronous. For **CPU-bound operations** such as image processing, encryption, PDF generation, or large calculations, I use `Task.Run()` to move the work to a ThreadPool thread, and I use `Parallel.ForEach` or PLINQ when the work can be safely split across multiple CPU cores. This keeps the application responsive while making effective use of available processors.
