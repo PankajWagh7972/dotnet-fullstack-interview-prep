@@ -395,3 +395,286 @@ Even if payment or shipping services are temporarily unavailable, the message re
 > **Azure Service Bus** is a durable messaging service used to send commands or work items between applications. It supports queues, topics, dead-letter queues, duplicate detection, ordering (sessions), and reliable processing, making it suitable for business-critical workflows like order or payment processing.
 >
 > **Azure Event Grid** is an event-routing service used to publish events to one or more subscribers. It's ideal for reacting to events such as blob uploads, resource changes, or user registrations. It enables loosely coupled, event-driven architectures where multiple services can independently respond to the same event.
+
+
+Excellent question. This is actually one of the key concepts in **Azure Service Bus** interviews.
+
+The short answer is: **Service Bus itself tracks the message state**, and consumers (your APIs or Azure Functions) tell Service Bus whether processing succeeded or failed.
+
+## How it works
+
+Suppose you have:
+
+```text
+Order API
+    |
+    | Send Message
+    v
++-------------------+
+| Service Bus Queue |
++-------------------+
+          |
+          | Receive
+          v
+Payment API
+```
+
+When the Payment API receives a message, there are two modes.
+
+---
+
+# 1. PeekLock Mode (Default) ✅
+
+This is the most commonly used mode.
+
+### Step 1
+
+Order API sends a message.
+
+```text
+Order #101
+```
+
+Queue:
+
+```text
+Order #101 (Active)
+```
+
+---
+
+### Step 2
+
+Payment API receives it.
+
+Service Bus **does not remove it immediately**.
+
+Instead, it **locks** the message.
+
+```text
+Order #101 (Locked)
+```
+
+Other consumers **cannot process this message** while it is locked.
+
+---
+
+### Step 3
+
+Payment API processes the order.
+
+If successful:
+
+```csharp
+await messageActions.CompleteMessageAsync(message);
+```
+
+Now Service Bus permanently removes it.
+
+```text
+Queue Empty
+```
+
+---
+
+If processing fails:
+
+```csharp
+await messageActions.AbandonMessageAsync(message);
+```
+
+The lock is released.
+
+```text
+Order #101 (Available Again)
+```
+
+Another consumer (or the same one later) can process it.
+
+---
+
+If something is wrong with the message itself:
+
+```csharp
+await messageActions.DeadLetterMessageAsync(message);
+```
+
+It moves to the Dead Letter Queue (DLQ).
+
+---
+
+## Message State Flow
+
+```text
+Active
+
+↓
+
+Locked
+
+↓
+
+Complete
+(Removed)
+
+OR
+
+Abandon
+(Returns to Queue)
+
+OR
+
+Dead Letter
+
+OR
+
+Deferred
+```
+
+---
+
+# 2. ReceiveAndDelete Mode
+
+In this mode:
+
+```text
+Consumer receives message
+
+↓
+
+Immediately deleted
+
+↓
+
+Consumer processes it
+```
+
+If the consumer crashes, the message is lost.
+
+This mode is used only when losing a message is acceptable, such as telemetry or logs.
+
+---
+
+# How does Service Bus know processing is complete?
+
+Your code explicitly tells it.
+
+Example:
+
+```csharp
+public async Task ProcessMessage(
+    ProcessMessageEventArgs args)
+{
+    try
+    {
+        var body = args.Message.Body.ToString();
+
+        // Process order
+
+        await args.CompleteMessageAsync(args.Message);
+    }
+    catch
+    {
+        await args.AbandonMessageAsync(args.Message);
+    }
+}
+```
+
+`CompleteMessageAsync()` informs Service Bus that processing finished successfully.
+
+---
+
+# What if two APIs are listening?
+
+Suppose three instances of the Payment API are running.
+
+```text
+Queue
+
+↓
+
+Payment API 1
+
+Payment API 2
+
+Payment API 3
+```
+
+Message:
+
+```text
+Order #101
+```
+
+Service Bus delivers it to **only one** consumer.
+
+It immediately locks the message.
+
+```text
+API 1  ← Locked
+
+API 2  ← Cannot receive it
+
+API 3  ← Cannot receive it
+```
+
+This prevents duplicate processing.
+
+---
+
+# What if API 1 crashes?
+
+Suppose API 1 receives the message.
+
+```text
+Locked
+```
+
+The lock lasts for a configurable duration (typically around 30 seconds, and it can be renewed).
+
+If API 1 crashes before calling `CompleteMessageAsync()`:
+
+```text
+Lock expires
+
+↓
+
+Message becomes Active again
+
+↓
+
+API 2 receives it
+```
+
+The message isn't lost.
+
+---
+
+# How do multiple services process the same business event?
+
+If you want:
+
+* Payment Service
+* Inventory Service
+* Shipping Service
+
+all to receive the same event, don't use a **Queue**.
+
+Use a **Topic** with **Subscriptions**.
+
+```text
+                Topic
+                  |
+        ---------------------
+        |        |         |
+        v        v         v
+ Payment   Inventory   Shipping
+```
+
+Each subscription gets its **own copy** of the message, so every service can process it independently.
+
+---
+
+## Interview Answer
+
+> Azure Service Bus tracks message state internally. In the default **PeekLock** mode, when a consumer receives a message, Service Bus locks it so no other consumer can process it. After successful processing, the consumer calls `CompleteMessageAsync()`, which removes the message. If processing fails, it can call `AbandonMessageAsync()` to make the message available again, or `DeadLetterMessageAsync()` if it cannot be processed. If the consumer crashes before completing the message, the lock expires and Service Bus automatically makes the message available for another consumer. This ensures reliable, at-least-once message delivery.
