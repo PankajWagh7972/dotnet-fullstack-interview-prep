@@ -348,6 +348,182 @@ FROM CTE;
 
 (Usually solved using `ROW_NUMBER()` with date difference logic.)
 
+
+
+
+This is a common SQL interview question that tests your understanding of **window functions**, **date arithmetic**, and the **gaps and islands** pattern.
+
+### Sample Data
+
+| User | Date |
+| ---- | ---- |
+| A    | 1    |
+| A    | 2    |
+| A    | 3    |
+| A    | 5    |
+
+### Expected Output
+
+| User |
+| ---- |
+| A    |
+
+Because user **A** logged in on **1, 2, and 3**, which are 3 consecutive days.
+
+---
+
+## Solution 1: Using `ROW_NUMBER()` (Recommended)
+
+The trick is:
+
+* Assign a row number to each login per user.
+* For consecutive dates, `(Date - Row_Number)` remains constant.
+* Group by that value and count the records.
+
+```sql
+WITH CTE AS
+(
+    SELECT
+        [User],
+        [Date],
+        ROW_NUMBER() OVER
+        (
+            PARTITION BY [User]
+            ORDER BY [Date]
+        ) AS rn
+    FROM LoginDetails
+),
+Groups AS
+(
+    SELECT
+        [User],
+        [Date],
+        rn,
+        [Date] - rn AS grp
+    FROM CTE
+)
+SELECT [User]
+FROM Groups
+GROUP BY [User], grp
+HAVING COUNT(*) >= 3;
+```
+
+### Step 1: `ROW_NUMBER()`
+
+| User | Date | rn |
+| ---- | ---- | -- |
+| A    | 1    | 1  |
+| A    | 2    | 2  |
+| A    | 3    | 3  |
+| A    | 5    | 4  |
+
+---
+
+### Step 2: Calculate `Date - rn`
+
+| User | Date | rn | grp |
+| ---- | ---- | -- | --- |
+| A    | 1    | 1  | 0   |
+| A    | 2    | 2  | 0   |
+| A    | 3    | 3  | 0   |
+| A    | 5    | 4  | 1   |
+
+Notice:
+
+* 1, 2, 3 all have the same `grp = 0`.
+* Day 5 starts a new group.
+
+Now:
+
+```sql
+GROUP BY User, grp
+HAVING COUNT(*) >= 3
+```
+
+returns user **A**.
+
+---
+
+## Solution 2: Using `LEAD()`
+
+Another elegant solution is to compare the next two login dates.
+
+```sql
+WITH CTE AS
+(
+    SELECT
+        [User],
+        [Date],
+        LEAD([Date],1) OVER(PARTITION BY [User] ORDER BY [Date]) AS NextDay,
+        LEAD([Date],2) OVER(PARTITION BY [User] ORDER BY [Date]) AS ThirdDay
+    FROM LoginDetails
+)
+SELECT DISTINCT [User]
+FROM CTE
+WHERE NextDay = [Date] + 1
+  AND ThirdDay = [Date] + 2;
+```
+
+### How it works
+
+For user A:
+
+| Date | NextDay | ThirdDay |
+| ---- | ------- | -------- |
+| 1    | 2       | 3        |
+| 2    | 3       | 5        |
+| 3    | 5       | NULL     |
+
+Only the first row satisfies:
+
+```text
+NextDay = Date + 1
+ThirdDay = Date + 2
+```
+
+So user A is returned.
+
+---
+
+## If dates are actual SQL dates
+
+If the column is of type `DATE`:
+
+```sql
+WITH CTE AS
+(
+    SELECT
+        UserId,
+        LoginDate,
+        ROW_NUMBER() OVER
+        (
+            PARTITION BY UserId
+            ORDER BY LoginDate
+        ) AS rn
+    FROM UserLogin
+)
+SELECT UserId
+FROM
+(
+    SELECT
+        UserId,
+        DATEADD(DAY, -rn, LoginDate) AS grp
+    FROM CTE
+) x
+GROUP BY UserId, grp
+HAVING COUNT(*) >= 3;
+```
+
+Here `DATEADD(DAY, -rn, LoginDate)` creates the grouping key because subtracting an integer directly from a `DATE` is not valid in SQL Server.
+
+---
+
+### Interview takeaway
+
+* Use **`ROW_NUMBER()`** to solve consecutive sequence ("gaps and islands") problems.
+* The key observation is that for consecutive values, **`Date - ROW_NUMBER()`** (or `DATEADD(DAY, -ROW_NUMBER(), LoginDate)` for real dates) remains constant.
+* Group by this value and count the rows to find sequences of consecutive days.
+
 ---
 
 # 12. Pivot Rows into Columns
