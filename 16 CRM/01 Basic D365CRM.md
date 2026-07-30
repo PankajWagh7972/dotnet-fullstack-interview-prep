@@ -2385,3 +2385,588 @@ This keeps the plugin fast and avoids blocking the CRM transaction.
 | Why use filtering attributes?                       | They prevent unnecessary plugin execution when unrelated fields are updated, improving performance.                                   |
 
 These concepts and scenarios are commonly discussed in Dynamics 365 CRM interviews for developers with 5–10 years of experience.
+
+
+These are very common Dynamics 365 interview questions. Let's cover them in detail.
+
+---
+
+# 1. Time Limit for Synchronous and Asynchronous Plugins
+
+## Synchronous Plugin
+
+* Executes immediately during the user request.
+* The user waits until the plugin finishes.
+* **Maximum execution time: 2 minutes (120 seconds).**
+
+If it exceeds 2 minutes:
+
+* Plugin is terminated.
+* Transaction is rolled back.
+* User receives a timeout/error.
+
+Example:
+
+```text
+User Clicks Save
+
+↓
+
+Plugin Runs (Validation)
+
+↓
+
+Record Saved
+```
+
+Good use cases
+
+* Validation
+* Calculations
+* Setting default values
+* Preventing invalid data
+
+Avoid
+
+* External API calls
+* File processing
+* Long SQL queries
+* Heavy loops
+
+---
+
+## Asynchronous Plugin
+
+Runs in the background through the **Asynchronous Service**.
+
+The user does not wait.
+
+Also has a **2-minute execution limit per execution**, but because it is decoupled from the user transaction, it is suitable for longer-running background work than synchronous plugins. If the work is expected to take even longer or involve unreliable external systems, move it outside the plugin (for example, to Azure Service Bus + Azure Functions).
+
+Example
+
+```text
+Save Account
+
+↓
+
+Record Saved
+
+↓
+
+Async Plugin Starts
+
+↓
+
+Call SAP API
+
+↓
+
+Send Email
+
+↓
+
+Complete
+```
+
+Good use cases
+
+* Email
+* API Calls
+* Azure Service Bus
+* ERP Integration
+* Notifications
+
+---
+
+# What if processing takes more than 2 minutes?
+
+Never do this:
+
+```text
+CRM Plugin
+
+↓
+
+Call SAP
+
+↓
+
+Wait 5 Minutes
+
+↓
+
+Return
+```
+
+Instead
+
+```text
+CRM Plugin
+
+↓
+
+Send Message
+
+↓
+
+Azure Service Bus
+
+↓
+
+Azure Function
+
+↓
+
+SAP
+
+↓
+
+Update CRM
+```
+
+This is Microsoft's recommended architecture.
+
+---
+
+# 2. Plugin Parameters
+
+Plugin parameters are available through
+
+```csharp
+context.InputParameters
+
+context.OutputParameters
+```
+
+Both are
+
+```csharp
+ParameterCollection
+```
+
+which behaves like
+
+```csharp
+Dictionary<string, object>
+```
+
+---
+
+# Input Parameters
+
+Contain information coming into the request.
+
+Example
+
+```text
+User Creates Account
+
+↓
+
+Target Entity
+
+↓
+
+Plugin
+```
+
+Code
+
+```csharp
+Entity entity =
+(Entity)context.InputParameters["Target"];
+```
+
+---
+
+## Common Input Parameters
+
+| Parameter       | Type                                                 | Used For               |
+| --------------- | ---------------------------------------------------- | ---------------------- |
+| Target          | Entity / EntityReference                             | Create, Update, Delete |
+| Id              | Guid                                                 | Record ID              |
+| Relationship    | Relationship                                         | Associate/Disassociate |
+| RelatedEntities | EntityReferenceCollection                            | Associate              |
+| Assignee        | EntityReference                                      | Assign Request         |
+| State           | OptionSetValue                                       | SetState               |
+| Status          | OptionSetValue                                       | SetState               |
+| Query           | QueryExpression / FetchExpression / QueryByAttribute | RetrieveMultiple       |
+| ColumnSet       | ColumnSet                                            | Retrieve               |
+| BusinessEntity  | Entity                                               | Older SDK (legacy)     |
+
+---
+
+## Example 1
+
+Create Account
+
+```text
+Target
+
+↓
+
+Entity
+```
+
+```csharp
+Entity account =
+(Entity)context.InputParameters["Target"];
+```
+
+---
+
+## Example 2
+
+Delete
+
+```text
+Target
+
+↓
+
+EntityReference
+```
+
+```csharp
+EntityReference account =
+(EntityReference)context.InputParameters["Target"];
+```
+
+Notice
+
+Delete doesn't provide the full entity.
+
+Only
+
+```text
+Logical Name
+
+Id
+```
+
+---
+
+## Example 3
+
+Assign
+
+```text
+Assignee
+
+↓
+
+EntityReference(User)
+```
+
+---
+
+# Output Parameters
+
+Contains the response returned by CRM.
+
+Example
+
+Create
+
+```text
+User
+
+↓
+
+Create Account
+
+↓
+
+Plugin
+
+↓
+
+Account Id Returned
+```
+
+Code
+
+```csharp
+Guid id =
+(Guid)context.OutputParameters["id"];
+```
+
+---
+
+## Common Output Parameters
+
+| Parameter                | Type               | Message          |
+| ------------------------ | ------------------ | ---------------- |
+| id                       | Guid               | Create           |
+| BusinessEntity           | Entity             | Retrieve         |
+| BusinessEntityCollection | EntityCollection   | RetrieveMultiple |
+| ResponseName             | Depends on request | Custom Actions   |
+
+---
+
+# Shared Variables
+
+Used for passing data between plugins in the same execution pipeline.
+
+```csharp
+context.SharedVariables["OrderTotal"] = 500;
+```
+
+Later
+
+```csharp
+decimal total =
+(decimal)context.SharedVariables["OrderTotal"];
+```
+
+Type
+
+```text
+Dictionary<String,Object>
+```
+
+---
+
+# Plugin Images
+
+## Pre Image
+
+Old values
+
+Type
+
+```text
+Entity
+```
+
+```csharp
+Entity pre =
+context.PreEntityImages["PreImage"];
+```
+
+---
+
+## Post Image
+
+Updated values
+
+Type
+
+```text
+Entity
+```
+
+```csharp
+Entity post =
+context.PostEntityImages["PostImage"];
+```
+
+---
+
+# Entity Types Used in Plugins
+
+## Entity
+
+Contains complete record.
+
+```csharp
+Entity account = new Entity("account");
+```
+
+Example
+
+```text
+Name
+
+Phone
+
+Email
+
+Revenue
+```
+
+---
+
+## EntityReference
+
+Contains only
+
+```text
+Logical Name
+
+GUID
+
+Name (optional)
+```
+
+Example
+
+```csharp
+EntityReference customer =
+new EntityReference("account", accountId);
+```
+
+---
+
+## EntityCollection
+
+Multiple records
+
+```csharp
+EntityCollection contacts;
+```
+
+---
+
+## OptionSetValue
+
+Choice Field
+
+```csharp
+OptionSetValue status =
+new OptionSetValue(1);
+```
+
+---
+
+## Money
+
+Currency field
+
+```csharp
+Money amount =
+new Money(5000);
+```
+
+---
+
+## AliasedValue
+
+Joined query result
+
+```csharp
+AliasedValue city =
+(AliasedValue)entity["contact.city"];
+```
+
+---
+
+## ColumnSet
+
+Columns to retrieve
+
+```csharp
+new ColumnSet("name","email");
+```
+
+---
+
+## Relationship
+
+Associate
+
+```csharp
+Relationship rel =
+new Relationship("account_contacts");
+```
+
+---
+
+## EntityReferenceCollection
+
+Many records
+
+```csharp
+EntityReferenceCollection contacts;
+```
+
+---
+
+# Most Frequently Used Parameters
+
+| Message          | Target Type                              | Output           |
+| ---------------- | ---------------------------------------- | ---------------- |
+| Create           | Entity                                   | Guid (id)        |
+| Update           | Entity                                   | None             |
+| Delete           | EntityReference                          | None             |
+| Assign           | EntityReference + Assignee               | None             |
+| SetState         | EntityReference + State + Status         | None             |
+| Associate        | Relationship + EntityReferenceCollection | None             |
+| Disassociate     | Relationship + EntityReferenceCollection | None             |
+| Retrieve         | EntityReference + ColumnSet              | Entity           |
+| RetrieveMultiple | QueryExpression / FetchExpression        | EntityCollection |
+
+---
+
+# Interview Questions
+
+### Q1. Why doesn't Delete have an Entity Target?
+
+Because the record is being deleted. Dynamics only needs the record's **logical name** and **GUID**, so it passes an `EntityReference` instead of the full `Entity`.
+
+---
+
+### Q2. Why use Pre Image?
+
+To access values **before** an update or delete.
+
+Example:
+
+```text
+Name
+
+Old = ABC Pvt Ltd
+
+↓
+
+Updated
+
+↓
+
+XYZ Pvt Ltd
+```
+
+Target only contains the changed fields, whereas the Pre Image contains the original values.
+
+---
+
+### Q3. Why use Post Image?
+
+To access the record **after** the operation completes.
+
+Example:
+
+```text
+Status
+
+Open
+
+↓
+
+Won
+```
+
+The Post Image contains the updated status.
+
+---
+
+### Q4. What is the difference between Target and Pre Image?
+
+| Target                                 | Pre Image                                     |
+| -------------------------------------- | --------------------------------------------- |
+| Contains only submitted/changed fields | Contains original values before the operation |
+| Available in Create/Update             | Available only if registered and applicable   |
+| Used to modify incoming data           | Used to compare old vs. new values            |
+
+---
+
+### Q5. What is the difference between `Entity` and `EntityReference`?
+
+| Entity                      | EntityReference                                            |
+| --------------------------- | ---------------------------------------------------------- |
+| Full record with attributes | Only logical name, GUID, and optional name                 |
+| Used for Create/Update      | Commonly used for Delete, lookup fields, and relationships |
+
+These questions are frequently asked in Dynamics 365 CRM interviews because they test your understanding of the plugin execution pipeline and how data flows through it.
+
