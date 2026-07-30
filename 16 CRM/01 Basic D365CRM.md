@@ -2970,3 +2970,577 @@ The Post Image contains the updated status.
 
 These questions are frequently asked in Dynamics 365 CRM interviews because they test your understanding of the plugin execution pipeline and how data flows through it.
 
+**Custom Actions** and **Custom APIs** are two ways to create custom messages in **Dynamics 365 CRM / Dataverse**. They allow you to expose reusable business operations that can be called from plugins, JavaScript, Power Automate, workflows, or external applications.
+
+A common interview question is:
+
+> **What is the difference between Custom API and Action? Which one should we use?**
+
+---
+
+# What is an Action?
+
+An **Action** is a custom process (message) introduced in earlier versions of Dynamics CRM.
+
+It allows you to create reusable business logic without directly exposing CRUD operations.
+
+Example:
+
+```text
+Approve Loan
+
+↓
+
+Validate Customer
+
+↓
+
+Check Credit Score
+
+↓
+
+Update Status
+
+↓
+
+Send Email
+
+↓
+
+Return Result
+```
+
+Instead of multiple API calls, everything is encapsulated in one Action.
+
+---
+
+# Where can Actions be called?
+
+* JavaScript
+* Plugins
+* Custom Workflow Activities
+* Power Automate
+* Web API
+* Organization Service (.NET)
+
+---
+
+# Example
+
+Suppose an Opportunity needs approval.
+
+Instead of
+
+```text
+Update Opportunity
+
+↓
+
+Create Approval Record
+
+↓
+
+Create Task
+
+↓
+
+Send Email
+
+↓
+
+Update Status
+```
+
+Create one Action
+
+```text
+ApproveOpportunity
+
+↓
+
+Does Everything
+```
+
+Client calls
+
+```text
+ApproveOpportunity()
+```
+
+---
+
+# Action Parameters
+
+Input
+
+```text
+OpportunityId
+
+ApprovedBy
+
+Comments
+```
+
+Output
+
+```text
+Success
+
+Message
+```
+
+---
+
+# Calling Action in C#
+
+```csharp
+OrganizationRequest request = new OrganizationRequest("new_ApproveOpportunity");
+
+request["OpportunityId"] = opportunityId;
+request["Comments"] = "Approved";
+
+OrganizationResponse response = service.Execute(request);
+```
+
+---
+
+# Calling Action using JavaScript
+
+```javascript
+Xrm.WebApi.online.execute(request)
+```
+
+---
+
+# Limitations of Actions
+
+* Originally designed around workflow capabilities.
+* Supports synchronous workflows.
+* Less flexible for modern API development.
+* Microsoft now recommends **Custom APIs** for new development.
+
+---
+
+# What is Custom API?
+
+A **Custom API** is the modern replacement for custom Actions.
+
+Microsoft introduced Custom APIs to create **strongly defined**, secure, extensible messages that integrate naturally with the Dataverse Web API and SDK.
+
+Instead of creating a workflow-based Action, you create a Custom API and implement the business logic in a plugin.
+
+---
+
+Example
+
+```text
+CloseCaseWithSurvey
+
+↓
+
+Plugin Executes
+
+↓
+
+Close Case
+
+↓
+
+Create Survey
+
+↓
+
+Notify Customer
+
+↓
+
+Return Survey Link
+```
+
+---
+
+# Custom API Architecture
+
+```text
+Application
+
+↓
+
+Dataverse Web API
+
+↓
+
+Custom API
+
+↓
+
+Plugin
+
+↓
+
+Business Logic
+
+↓
+
+Response
+```
+
+---
+
+# Components of a Custom API
+
+### 1. Custom API
+
+Defines
+
+* Name
+* Bound/Unbound
+* Parameters
+* Response
+* Plugin
+
+---
+
+### 2. Request Parameters
+
+Example
+
+```text
+CustomerId
+
+Amount
+
+Currency
+
+Discount
+```
+
+---
+
+### 3. Response Properties
+
+Example
+
+```text
+OrderId
+
+Status
+
+Message
+```
+
+---
+
+### 4. Plugin
+
+Contains actual logic.
+
+```csharp
+public class CalculateDiscountPlugin : IPlugin
+{
+    public void Execute(IServiceProvider serviceProvider)
+    {
+        // Business Logic
+    }
+}
+```
+
+---
+
+# Bound vs Unbound Custom API
+
+## Bound API
+
+Works on one entity.
+
+Example
+
+```text
+Account
+
+↓
+
+Activate Account
+```
+
+Called as
+
+```text
+/accounts(id)/Microsoft.Dynamics.CRM.ActivateAccount
+```
+
+---
+
+## Unbound API
+
+Not attached to any entity.
+
+Example
+
+```text
+GenerateInvoiceNumber()
+```
+
+No record required.
+
+---
+
+# Example
+
+Bound
+
+```text
+Close Opportunity
+
+↓
+
+Specific Opportunity
+```
+
+Unbound
+
+```text
+CalculateTax
+
+↓
+
+No Record Needed
+```
+
+---
+
+# Input Parameter Types
+
+Supported
+
+```text
+String
+
+Integer
+
+Boolean
+
+Decimal
+
+Double
+
+Money
+
+DateTime
+
+GUID
+
+EntityReference
+
+Entity
+
+EntityCollection
+
+OptionSetValue
+```
+
+---
+
+# Output Types
+
+```text
+String
+
+Boolean
+
+GUID
+
+Entity
+
+EntityCollection
+
+Money
+
+Complex Objects
+```
+
+---
+
+# Calling Custom API in C#
+
+```csharp
+OrganizationRequest request =
+new OrganizationRequest("new_CalculateDiscount");
+
+request["Amount"] = 5000M;
+
+OrganizationResponse response =
+service.Execute(request);
+
+decimal discount =
+(decimal)response["Discount"];
+```
+
+---
+
+# Calling Custom API from JavaScript
+
+```javascript
+Xrm.WebApi.online.execute(request)
+```
+
+---
+
+# Real-Time Example
+
+Requirement
+
+Whenever sales users click
+
+```text
+Approve Quote
+```
+
+Need to
+
+* Validate Credit
+* Call SAP
+* Generate PDF
+* Update Quote
+* Return PDF URL
+
+Architecture
+
+```text
+React
+
+↓
+
+Custom API
+
+↓
+
+Plugin
+
+↓
+
+SAP
+
+↓
+
+Generate PDF
+
+↓
+
+Return URL
+```
+
+Instead of exposing multiple endpoints
+
+```text
+Validate
+
+Create PDF
+
+Update Quote
+
+Email
+
+SAP
+```
+
+everything is wrapped inside one API.
+
+---
+
+# Custom API vs Action
+
+| Feature                  | Action   | Custom API     |
+| ------------------------ | -------- | -------------- |
+| Microsoft Recommendation | Legacy   | ✅ Preferred    |
+| Introduced               | CRM 2013 | Dataverse      |
+| Based on Workflow        | Yes      | No             |
+| Plugin Support           | Yes      | Yes            |
+| Web API Support          | Yes      | Excellent      |
+| Bound/Unbound            | Yes      | Yes            |
+| Strong Metadata          | Limited  | Yes            |
+| Performance              | Good     | Better         |
+| Security                 | Good     | Better control |
+| Extensibility            | Limited  | High           |
+
+---
+
+# When should you use an Action?
+
+* Supporting legacy CRM implementations.
+* Existing solutions already depend on Actions.
+* Simple workflow-oriented operations.
+
+---
+
+# When should you use a Custom API?
+
+* New Dynamics 365/Dataverse development.
+* Operations that will be consumed by JavaScript, Power Automate, plugins, or external applications.
+* Business logic requiring well-defined request/response contracts.
+* Modern, maintainable, and versionable APIs.
+
+---
+
+# Action vs Plugin
+
+| Plugin                                                           | Action                                                     |
+| ---------------------------------------------------------------- | ---------------------------------------------------------- |
+| Triggered automatically by events (Create, Update, Delete, etc.) | Called explicitly by code or users                         |
+| Event-driven                                                     | Request-driven                                             |
+| Runs in execution pipeline                                       | Runs only when invoked                                     |
+| Cannot be called directly by users                               | Can be called via Web API, SDK, JavaScript, Power Automate |
+
+---
+
+# Plugin vs Custom API
+
+| Plugin                             | Custom API                                  |
+| ---------------------------------- | ------------------------------------------- |
+| Executes on platform events        | Executes when a custom message is invoked   |
+| Triggered automatically            | Explicitly called                           |
+| Used for validation and automation | Used to expose reusable business operations |
+| No public API endpoint             | Exposed through Dataverse Web API and SDK   |
+
+---
+
+# Interview Questions
+
+### 1. Why did Microsoft introduce Custom APIs?
+
+To provide a modern, metadata-driven alternative to Actions with stronger contracts, better extensibility, and improved integration with the Dataverse Web API.
+
+---
+
+### 2. When would you choose a Plugin over a Custom API?
+
+Use a **Plugin** when logic must run automatically in response to platform events (Create, Update, Delete, etc.). Use a **Custom API** when clients need to explicitly invoke a business operation.
+
+---
+
+### 3. What is the difference between a Bound and Unbound Custom API?
+
+* **Bound:** Associated with a specific table (entity) instance or collection.
+* **Unbound:** Independent of any table and can be invoked without referencing a record.
+
+---
+
+### 4. Can a Custom API execute a Plugin?
+
+Yes. In fact, the business logic for a Custom API is typically implemented in a plugin registered as the API's handler.
+
+---
+
+### 5. Can JavaScript call a Custom API?
+
+Yes. A Custom API is exposed through the Dataverse Web API and can be invoked using `Xrm.WebApi.online.execute()` or standard HTTP requests.
+
+---
+
+## Interview Recommendation (2026)
+
+If you're interviewing for a **Dynamics 365 CE / Dataverse developer** role, emphasize this guidance:
+
+* **Plugins** → Automatic event-driven business logic.
+* **Custom APIs** → Explicit, reusable business operations exposed as APIs.
+* **Actions** → Legacy feature; maintain existing implementations, but prefer **Custom APIs** for new solutions.
