@@ -1723,3 +1723,665 @@ At this level, interviewers expect you to explain:
 * **Real production scenarios** you've handled.
 
 If you're targeting companies like **Microsoft, Deloitte, Capgemini, Hitachi, EY, or Cognizant**, I can also provide **50 architecture-based Dynamics 365 interview questions** and **30 coding-based plugin interview questions with complete C# implementations**.
+
+
+Plugins in **Microsoft Dynamics 365 CRM (Dataverse)** are custom .NET classes that execute automatically when specific events occur in the platform. They are used to implement **server-side business logic** that runs before or after operations like Create, Update, Delete, Assign, SetState, etc.
+
+---
+
+# What is a Plugin?
+
+A plugin is a **C# class library (.NET)** that implements the **IPlugin** interface.
+
+```csharp
+public class AccountPlugin : IPlugin
+{
+    public void Execute(IServiceProvider serviceProvider)
+    {
+        // Business Logic
+    }
+}
+```
+
+It is compiled into a DLL and registered using the **Plugin Registration Tool (PRT)**.
+
+---
+
+# Why do we use Plugins?
+
+Common scenarios:
+
+* Validate business rules
+* Auto-populate fields
+* Prevent invalid data
+* Integrate with external systems
+* Create related records
+* Send notifications
+* Audit changes
+* Perform calculations
+
+Example:
+
+Whenever an Opportunity is created
+
+```
+Create Opportunity
+      ↓
+Plugin Executes
+      ↓
+Create Follow-up Task
+      ↓
+Send Email
+```
+
+---
+
+# Plugin Execution Pipeline
+
+```
+Request
+
+↓
+
+Pre Validation
+
+↓
+
+Pre Operation
+
+↓
+
+Core Platform Operation
+
+↓
+
+Post Operation
+
+↓
+
+Response
+```
+
+---
+
+# Plugin Stages
+
+## 1. Pre Validation (Stage 10)
+
+Runs **before security checks**.
+
+Used for
+
+* Input validation
+* Business validation
+* Cancel operation early
+
+Example
+
+```
+User creates Account
+
+↓
+
+Check duplicate PAN Number
+
+↓
+
+If Exists
+
+↓
+
+Throw Exception
+```
+
+Code
+
+```csharp
+throw new InvalidPluginExecutionException("Duplicate PAN Number.");
+```
+
+---
+
+## 2. Pre Operation (Stage 20)
+
+Runs inside transaction before database save.
+
+Best for
+
+* Modify input data
+* Set default values
+* Update fields
+
+Example
+
+```
+Create Contact
+
+↓
+
+Plugin
+
+↓
+
+Set Full Name
+
+↓
+
+Save
+```
+
+```csharp
+Entity target = (Entity)context.InputParameters["Target"];
+
+target["fullname"] =
+target["firstname"] + " " + target["lastname"];
+```
+
+No Update() call required.
+
+---
+
+## 3. Main Operation (Stage 30)
+
+Microsoft internal operation.
+
+Cannot register plugins here.
+
+---
+
+## 4. Post Operation (Stage 40)
+
+Runs after database commit.
+
+Used for
+
+* Create related records
+* Call external APIs
+* Azure Service Bus
+* Azure Functions
+* Email
+* Logging
+
+Example
+
+```
+Account Created
+
+↓
+
+Plugin
+
+↓
+
+Create Welcome Task
+
+↓
+
+Send Email
+```
+
+---
+
+# Plugin Execution Mode
+
+## Synchronous
+
+```
+User Click Save
+
+↓
+
+Plugin Executes
+
+↓
+
+Save Completes
+```
+
+User waits.
+
+Used when
+
+* Validation
+* Mandatory logic
+* Data manipulation
+
+---
+
+## Asynchronous
+
+```
+User Click Save
+
+↓
+
+Record Saved
+
+↓
+
+Background Plugin Executes
+```
+
+User does not wait.
+
+Used for
+
+* Email
+* API Calls
+* Integration
+* Heavy Processing
+
+---
+
+# Plugin Images
+
+Images capture entity values before or after an operation.
+
+## Pre Image
+
+Old values
+
+Example
+
+```
+Status
+
+Open
+
+↓
+
+Update
+
+↓
+
+Closed
+```
+
+Pre Image
+
+```
+Status = Open
+```
+
+---
+
+## Post Image
+
+New values
+
+```
+Status = Closed
+```
+
+---
+
+Example
+
+```csharp
+Entity preImage =
+context.PreEntityImages["PreImage"];
+
+string oldName =
+preImage.GetAttributeValue<string>("name");
+```
+
+---
+
+# Input Parameters
+
+Contains incoming request data.
+
+```csharp
+Entity entity =
+(Entity)context.InputParameters["Target"];
+```
+
+---
+
+# Output Parameters
+
+Contains response.
+
+Example
+
+Retrieve
+
+```
+Retrieved Entity
+```
+
+---
+
+# Shared Variables
+
+Pass data between plugins.
+
+Plugin 1
+
+```csharp
+context.SharedVariables["Discount"] = 10;
+```
+
+Plugin 2
+
+```csharp
+int discount =
+(int)context.SharedVariables["Discount"];
+```
+
+---
+
+# Execution Context
+
+```csharp
+IPluginExecutionContext context
+```
+
+Contains
+
+* MessageName
+* PrimaryEntityName
+* UserId
+* InitiatingUserId
+* CorrelationId
+* Depth
+* Stage
+* Mode
+* ParentContext
+* SharedVariables
+* Images
+
+---
+
+# Important Context Properties
+
+## Message Name
+
+```csharp
+context.MessageName
+```
+
+Examples
+
+```
+Create
+Update
+Delete
+Assign
+Merge
+SetState
+Associate
+Disassociate
+```
+
+---
+
+## Primary Entity
+
+```csharp
+context.PrimaryEntityName
+```
+
+Output
+
+```
+account
+contact
+lead
+opportunity
+```
+
+---
+
+## Depth
+
+Very important.
+
+Used to prevent infinite recursion.
+
+Example
+
+Plugin updates Account
+
+↓
+
+Update triggers Plugin again
+
+↓
+
+Infinite Loop
+
+Prevent
+
+```csharp
+if (context.Depth > 1)
+    return;
+```
+
+---
+
+# Organization Service
+
+Used for CRUD operations.
+
+```csharp
+IOrganizationServiceFactory factory =
+(IOrganizationServiceFactory)
+serviceProvider.GetService(typeof(IOrganizationServiceFactory));
+
+IOrganizationService service =
+factory.CreateOrganizationService(context.UserId);
+```
+
+---
+
+Create
+
+```csharp
+service.Create(entity);
+```
+
+Retrieve
+
+```csharp
+service.Retrieve("account", id, new ColumnSet(true));
+```
+
+Update
+
+```csharp
+service.Update(entity);
+```
+
+Delete
+
+```csharp
+service.Delete("account", id);
+```
+
+---
+
+# Tracing Service
+
+Useful for debugging.
+
+```csharp
+ITracingService tracing =
+(ITracingService)
+serviceProvider.GetService(typeof(ITracingService));
+
+tracing.Trace("Plugin Started");
+```
+
+Logs visible in Plugin Trace Logs.
+
+---
+
+# Exception Handling
+
+```csharp
+try
+{
+    // logic
+}
+catch(Exception ex)
+{
+    tracing.Trace(ex.ToString());
+
+    throw new InvalidPluginExecutionException(
+        "Unexpected Error", ex);
+}
+```
+
+---
+
+# Complete Plugin Example
+
+```csharp
+public class AccountPlugin : IPlugin
+{
+    public void Execute(IServiceProvider serviceProvider)
+    {
+        ITracingService tracing =
+            (ITracingService)serviceProvider.GetService(typeof(ITracingService));
+
+        IPluginExecutionContext context =
+            (IPluginExecutionContext)serviceProvider.GetService(typeof(IPluginExecutionContext));
+
+        if (context.Depth > 1)
+            return;
+
+        if (!context.InputParameters.Contains("Target"))
+            return;
+
+        Entity target =
+            (Entity)context.InputParameters["Target"];
+
+        if (target.LogicalName != "account")
+            return;
+
+        if (target.Contains("name"))
+        {
+            target["description"] =
+                "Created from Plugin";
+        }
+
+        tracing.Trace("Plugin Completed.");
+    }
+}
+```
+
+---
+
+# Registration Steps
+
+1. Build DLL
+2. Open Plugin Registration Tool
+3. Connect to Dataverse
+4. Register Assembly
+5. Register Step
+6. Select Message (Create/Update/Delete)
+7. Select Entity
+8. Select Stage
+9. Select Mode
+10. Register Image (if required)
+
+---
+
+# Real-Time Scenario
+
+### Requirement
+
+Whenever an Opportunity is won:
+
+* Update Customer Status
+* Create Invoice
+* Send Email
+* Notify ERP
+* Log Activity
+
+Pipeline
+
+```
+Opportunity Won
+
+↓
+
+Post Operation Plugin
+
+↓
+
+Update Account
+
+↓
+
+Create Invoice
+
+↓
+
+Call ERP API
+
+↓
+
+Queue Email
+
+↓
+
+Log Audit
+```
+
+For long-running integrations (ERP, emails, third-party APIs), a common pattern is:
+
+```
+Dynamics Plugin (Post Operation)
+
+↓
+
+Azure Service Bus
+
+↓
+
+Azure Function
+
+↓
+
+ERP / SAP / External APIs
+
+↓
+
+Dead Letter Queue (if retries fail)
+```
+
+This keeps the plugin fast and avoids blocking the CRM transaction.
+
+---
+
+# Plugin Best Practices
+
+* Use **Pre Operation** when modifying the target entity before save.
+* Use **Post Operation** for creating related records or publishing events.
+* Avoid long-running operations in synchronous plugins.
+* Check `context.Depth` to prevent recursion.
+* Use filtering attributes on Update steps so the plugin runs only when relevant fields change.
+* Use `ITracingService` for diagnostics.
+* Keep plugins focused on a single responsibility.
+* Use secure/unsecure configuration for configurable values instead of hardcoding.
+* For external integrations, publish a message to **Azure Service Bus** instead of making lengthy HTTP calls directly from the plugin.
+* Register only the necessary images and columns to reduce overhead.
+* Always validate that `Target` exists and is the expected entity type.
+
+---
+
+# Frequently Asked Interview Questions
+
+| Question                                            | Expected Answer                                                                                                                       |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| Why use a plugin instead of JavaScript?             | Plugins run server-side, are more secure, cannot be bypassed by users, and can execute regardless of the client (web, API, import).   |
+| Pre Validation vs Pre Operation?                    | Pre Validation runs before security checks and transaction; Pre Operation runs inside the transaction before the record is committed. |
+| Why use `Depth`?                                    | To prevent infinite recursion when plugin logic updates records that trigger the same plugin again.                                   |
+| What are Plugin Images?                             | Snapshots of entity data before (Pre Image) or after (Post Image) the operation.                                                      |
+| Synchronous vs Asynchronous?                        | Synchronous blocks the user's request until complete; asynchronous runs in the background after the operation.                        |
+| When should you use Azure Service Bus with plugins? | For long-running, resilient, or decoupled integrations with external systems.                                                         |
+| Why use filtering attributes?                       | They prevent unnecessary plugin execution when unrelated fields are updated, improving performance.                                   |
+
+These concepts and scenarios are commonly discussed in Dynamics 365 CRM interviews for developers with 5–10 years of experience.
