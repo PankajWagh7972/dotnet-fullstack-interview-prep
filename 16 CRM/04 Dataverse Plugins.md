@@ -964,3 +964,449 @@ Power Automate
 # Interview Answer (2 Minutes)
 
 > The most common way to call a Power Automate flow from a plug-in is to create an **HTTP-triggered flow** using the **"When an HTTP request is received"** trigger. The flow exposes a secure endpoint URL. In the plug-in, I serialize the required data into JSON and send it using `HttpClient.PostAsync()`. The flow processes the payload and can perform actions such as sending emails, creating SharePoint items, posting Teams messages, or integrating with external systems. For decoupled, asynchronous processing, another common pattern is to have the plug-in create or update a Dataverse record and let a Power Automate flow start from the **"When a row is added, modified, or deleted"** trigger.
+
+
+**Custom API + Power Automate** is an advanced pattern used when you want to expose a **reusable business operation** from Dynamics 365/Dataverse instead of directly calling a Flow or Web API.
+
+It is commonly used in enterprise projects because it provides a clean API layer between plugins, JavaScript, Power Automate, and external applications.
+
+---
+
+# Real World Scenario
+
+Suppose you have this requirement:
+
+> When an Opportunity is Won:
+>
+> * Validate customer
+> * Generate Invoice
+> * Notify Finance
+> * Create SAP Sales Order
+> * Send Teams Notification
+
+If every application implements this logic separately:
+
+```text
+Plugin --------------\
+JavaScript -----------> Business Logic
+Power Automate ------/
+Portal --------------/
+Mobile App ---------/
+```
+
+Business logic becomes duplicated.
+
+Instead, create one **Custom API**.
+
+```text
+Plugin
+        \
+JavaScript \
+Power Automate ---> Custom API ---> Business Logic
+Portal      /
+Mobile App /
+```
+
+Everyone calls the same API.
+
+---
+
+# Architecture
+
+```text
+User Clicks "Win Opportunity"
+
+        │
+        ▼
+Plugin
+
+        │
+        ▼
+Execute Custom API
+
+        │
+        ▼
+Plugin registered on Custom API
+
+        │
+        ▼
+Business Logic
+
+        │
+        ├── Create Invoice
+        ├── Update Opportunity
+        ├── Call SAP
+        ├── Send Email
+        └── Return Result
+
+        │
+        ▼
+Power Automate (optional)
+```
+
+---
+
+# What is a Custom API?
+
+A Custom API is a Dataverse message that you define.
+
+Examples:
+
+```text
+new_CreateInvoice
+
+new_ApproveLoan
+
+new_GenerateQuotation
+
+new_SendToSAP
+
+new_CloseProject
+```
+
+It behaves like Microsoft's built-in messages:
+
+```
+Create
+
+Update
+
+Delete
+
+Associate
+
+Disassociate
+```
+
+except it is your own operation.
+
+---
+
+# Step 1 Create Custom API
+
+Using Solution Explorer
+
+```
+Solution
+
+↓
+
+New
+
+↓
+
+Custom API
+```
+
+Example
+
+```
+Name
+
+new_CreateInvoice
+
+Binding Type
+
+Entity
+
+Entity
+
+Opportunity
+
+Allowed
+
+Yes
+```
+
+---
+
+# Input Parameters
+
+```
+OpportunityId (Guid)
+
+InvoiceType (string)
+
+SendEmail (bool)
+```
+
+---
+
+# Output Parameter
+
+```
+InvoiceNumber
+```
+
+---
+
+# Register Plugin
+
+Register plugin on
+
+```
+Message
+
+new_CreateInvoice
+```
+
+instead of
+
+```
+Create
+
+Update
+```
+
+---
+
+# Plugin
+
+```csharp
+public class CreateInvoicePlugin : IPlugin
+{
+    public void Execute(IServiceProvider serviceProvider)
+    {
+        var context =
+            (IPluginExecutionContext)serviceProvider
+            .GetService(typeof(IPluginExecutionContext));
+
+        Guid opportunityId =
+            (Guid)context.InputParameters["OpportunityId"];
+
+        string invoiceType =
+            (string)context.InputParameters["InvoiceType"];
+
+        bool sendEmail =
+            (bool)context.InputParameters["SendEmail"];
+
+        // Business Logic
+
+        string invoiceNumber = "INV-10025";
+
+        context.OutputParameters["InvoiceNumber"] =
+            invoiceNumber;
+    }
+}
+```
+
+---
+
+# Calling Custom API from Plugin
+
+Another plugin can invoke it.
+
+```csharp
+OrganizationRequest request =
+    new OrganizationRequest("new_CreateInvoice");
+
+request["OpportunityId"] = opportunity.Id;
+request["InvoiceType"] = "Tax";
+request["SendEmail"] = true;
+
+OrganizationResponse response =
+    service.Execute(request);
+
+string invoiceNumber =
+    response["InvoiceNumber"].ToString();
+```
+
+Notice:
+
+There is **no HTTP call**.
+
+It executes entirely inside Dataverse.
+
+---
+
+# Calling from JavaScript
+
+```javascript
+var req = {
+    OpportunityId: opportunityId,
+    InvoiceType: "Tax",
+    SendEmail: true
+};
+
+Xrm.WebApi.online.execute(req);
+```
+
+Same API.
+
+---
+
+# Calling from Power Automate
+
+Power Automate provides the Dataverse action:
+
+```
+Perform an unbound action
+
+or
+
+Perform a bound action
+```
+
+Choose
+
+```
+new_CreateInvoice
+```
+
+Pass
+
+```
+OpportunityId
+
+InvoiceType
+
+SendEmail
+```
+
+Receive
+
+```
+InvoiceNumber
+```
+
+No HTTP.
+
+No Azure Function.
+
+No Web API coding.
+
+---
+
+# Calling from External System
+
+```
+POST
+
+/api/data/v9.2/new_CreateInvoice
+```
+
+Body
+
+```json
+{
+   "OpportunityId":"...",
+   "InvoiceType":"Tax",
+   "SendEmail":true
+}
+```
+
+Exactly the same API.
+
+---
+
+# Why Use Custom API?
+
+Imagine five applications need to create invoices.
+
+Without Custom API
+
+```
+Plugin
+
+↓
+
+Invoice Logic
+
+JavaScript
+
+↓
+
+Invoice Logic
+
+Power Automate
+
+↓
+
+Invoice Logic
+
+Portal
+
+↓
+
+Invoice Logic
+```
+
+Four copies.
+
+---
+
+With Custom API
+
+```
+Plugin
+       \
+JS -----\
+Flow -----> Custom API
+Portal ---/
+Mobile --/
+
+↓
+
+One Business Logic
+```
+
+Single implementation.
+
+---
+
+# Custom API + Power Automate
+
+Power Automate becomes only the orchestrator.
+
+```
+Flow
+
+↓
+
+Perform Action
+
+↓
+
+new_CreateInvoice
+
+↓
+
+Plugin Executes
+
+↓
+
+Returns Invoice Number
+
+↓
+
+Send Email
+
+↓
+
+Teams Message
+
+↓
+
+SAP
+```
+
+The business logic stays inside Dataverse, while the flow handles orchestration and integrations.
+
+---
+
+# Interview Answer
+
+> A **Custom API** is a reusable Dataverse operation that encapsulates business logic behind a custom message. Instead of duplicating logic in plugins, JavaScript, Power Automate, or external applications, all clients invoke the same Custom API. The API accepts input parameters, executes a plugin registered on that message, and can return output parameters. Power Automate can invoke it using the Dataverse **Perform a bound action** or **Perform an unbound action** action, while plugins can call it with `IOrganizationService.Execute()`. This approach centralizes business rules, improves maintainability, and provides a consistent contract for multiple consumers.
+
+## Custom API vs Action (Interview Question)
+
+| Feature                                      | Custom API | Legacy Action (Process) |
+| -------------------------------------------- | ---------- | ----------------------- |
+| Modern approach                              | ✅ Yes      | ❌ No                    |
+| Supports plug-ins                            | ✅ Yes      | ✅ Yes                   |
+| Supports Power Automate                      | ✅ Yes      | ✅ Yes                   |
+| Can be called via Web API                    | ✅ Yes      | ✅ Yes                   |
+| Better ALM and solution support              | ✅ Yes      | Limited                 |
+| Recommended by Microsoft for new development | ✅ Yes      | ❌ No                    |
+
+For new Dataverse development, **Custom API is the recommended approach** over classic Actions because it offers a cleaner, strongly defined contract and better long-term maintainability.
