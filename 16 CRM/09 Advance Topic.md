@@ -1933,3 +1933,224 @@ Instead:
 # Interview Answer (2 Minutes)
 
 > Metadata in a plugin is queried using the Dataverse Metadata API through `IOrganizationService.Execute()`. For example, I use `RetrieveEntityRequest` to retrieve entity definitions, `RetrieveAttributeRequest` for attribute details, `RetrieveOptionSetRequest` for global choice metadata, and `RetrieveMetadataChangesRequest` when tracking metadata updates. This allows me to access information such as display names, logical names, option set labels, relationships, and primary attributes. Since metadata changes infrequently, I avoid querying it on every plugin execution and instead retrieve only the required metadata or cache it where appropriate.
+
+
+---
+This is an **advanced Dynamics 365 interview question** related to the **early-bound API (`OrganizationServiceContext`)** and **optimistic concurrency**.
+
+## Short Answer
+
+> `OrganizationServiceContext.SaveChanges()` submits all tracked changes to Dataverse. By default, it **does not automatically protect against concurrent updates** using RowVersion checks. If another user updates the same record before `SaveChanges()` is called, the last update generally wins unless you explicitly implement optimistic concurrency using `RowVersion` and `UpdateRequest` with `ConcurrencyBehavior.IfRowVersionMatches`.
+
+---
+
+# What is `OrganizationServiceContext`?
+
+`OrganizationServiceContext` is the early-bound equivalent of Entity Framework's `DbContext`.
+
+```text
+OrganizationServiceContext
+
+↓
+
+Tracks Entity Changes
+
+↓
+
+SaveChanges()
+
+↓
+
+Dataverse
+```
+
+It keeps track of entities you retrieve and modifies them when you call `SaveChanges()`.
+
+---
+
+# Example
+
+```csharp
+using (var context = new OrganizationServiceContext(service))
+{
+    Account account = context.CreateQuery<Account>()
+        .First(a => a.AccountId == accountId);
+
+    account.Name = "ABC Technologies";
+
+    context.UpdateObject(account);
+
+    context.SaveChanges();
+}
+```
+
+`SaveChanges()` sends the pending changes to Dataverse.
+
+---
+
+# What Happens During Concurrency?
+
+Suppose:
+
+```text
+10:00
+
+User A retrieves Account
+
+Name = ABC
+```
+
+At the same time:
+
+```text
+10:01
+
+User B updates
+
+Name = XYZ
+```
+
+Then:
+
+```text
+10:02
+
+User A calls SaveChanges()
+
+Name = ABC Technologies
+```
+
+Without optimistic concurrency:
+
+```text
+Final Value
+
+ABC Technologies
+```
+
+User B's update is overwritten (**last writer wins**).
+
+---
+
+# Does `SaveChanges()` Check RowVersion?
+
+**No, not by default.**
+
+It doesn't automatically include the record's `RowVersion` or perform an `IfRowVersionMatches` check.
+
+To enforce optimistic concurrency, you should use `UpdateRequest` (or another request that supports concurrency behavior) and set:
+
+```csharp
+ConcurrencyBehavior = ConcurrencyBehavior.IfRowVersionMatches;
+```
+
+---
+
+# SaveChanges Options
+
+You can control how `SaveChanges()` behaves using `SaveChangesOptions`.
+
+```csharp
+context.SaveChanges(SaveChangesOptions.None);
+```
+
+Other options include:
+
+```csharp
+SaveChangesOptions.ContinueOnError
+
+SaveChangesOptions.BatchWithSingleChangeset
+```
+
+These options affect batching and error handling—not concurrency checking.
+
+---
+
+# Example: Batch Save
+
+```csharp
+context.UpdateObject(account);
+
+context.UpdateObject(contact);
+
+context.SaveChanges(
+    SaveChangesOptions.BatchWithSingleChangeset);
+```
+
+Both updates are sent together in a single batch request.
+
+---
+
+# How to Handle Concurrency Properly
+
+Instead of relying on `SaveChanges()` alone:
+
+```csharp
+Entity account = service.Retrieve(
+    "account",
+    accountId,
+    new ColumnSet("name"));
+
+string rowVersion = account.RowVersion;
+
+account["name"] = "ABC";
+
+UpdateRequest request = new UpdateRequest
+{
+    Target = account,
+    ConcurrencyBehavior =
+        ConcurrencyBehavior.IfRowVersionMatches
+};
+
+service.Execute(request);
+```
+
+If another user has modified the record, Dataverse throws a concurrency exception instead of overwriting the data.
+
+---
+
+# Real Project Example
+
+### Banking Application
+
+Suppose two users edit the same loan.
+
+```text
+Loan
+
+↓
+
+User A
+
+↓
+
+Change Interest Rate
+
+------------------------
+
+Loan
+
+↓
+
+User B
+
+↓
+
+Change Loan Amount
+```
+
+If both call `SaveChanges()` without optimistic concurrency:
+
+```text
+Last Save Wins
+```
+
+One user's changes may be lost.
+
+Using `RowVersion` prevents this by detecting that the record changed between retrieval and update.
+
+---
+
+# Interview Answer (2 Minutes)
+
+> `OrganizationServiceContext.SaveChanges()` persists all tracked entity changes to Dataverse, similar to Entity Framework. By default, it does **not** perform optimistic concurrency checks using `RowVersion`, so if multiple users update the same record, the last update can overwrite previous changes. `SaveChangesOptions` control batching and error handling but do not enable concurrency protection. When concurrency control is required, I use `UpdateRequest` with `ConcurrencyBehavior.IfRowVersionMatches` and the record's `RowVersion` so Dataverse detects conflicting updates and throws an exception instead of silently overwriting another user's changes.
