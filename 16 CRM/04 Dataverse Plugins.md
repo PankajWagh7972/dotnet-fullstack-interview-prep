@@ -558,3 +558,172 @@ Avoid it for:
 # Interview Answer (2–3 Minutes)
 
 > A **ServiceEndpoint** is a Dataverse entity that represents an Azure messaging endpoint such as an Azure Service Bus Queue, Topic, or Event Hub. It enables Dynamics 365 to publish the `RemoteExecutionContext` to Azure instead of performing lengthy processing inside the plugin. This is commonly used for asynchronous integrations with systems like SAP or external microservices. For example, when an Account is created, the plugin posts the execution context to an Azure Service Bus queue. An Azure Function subscribed to that queue processes the message, calls the external API, handles retries or failures independently, and updates the external system without delaying the user's transaction. This approach improves scalability, resilience, and overall user experience.
+
+
+There are **two ways** to integrate with Azure Service Bus from Dynamics 365:
+
+1. **Azure-Aware Plugin (ServiceEndpoint)** → **No code is required to send the message.** Dynamics automatically serializes the `RemoteExecutionContext` and posts it to the registered ServiceEndpoint.
+2. **Regular Plugin** → You write code to call Azure Service Bus yourself using the Azure SDK or an HTTP endpoint.
+
+If the interviewer is asking specifically about **ServiceEndpoint**, then the answer is that **there is no code to send the message**. You simply register the ServiceEndpoint and the plugin step using the Plugin Registration Tool. Dynamics handles publishing the execution context.
+
+However, if you want a plugin that **manually sends a custom message to Azure Service Bus**, here's a complete example.
+
+---
+
+# Plugin Example (Manual Azure Service Bus)
+
+Install the NuGet package:
+
+```text
+Azure.Messaging.ServiceBus
+```
+
+### Plugin
+
+```csharp
+using Azure.Messaging.ServiceBus;
+using Microsoft.Xrm.Sdk;
+using Newtonsoft.Json;
+using System;
+using System.Threading.Tasks;
+
+public class AccountCreatePlugin : IPlugin
+{
+    // Store this securely (for example, in Secure Configuration)
+    private readonly string _connectionString;
+    private readonly string _queueName;
+
+    public AccountCreatePlugin(string unsecureConfig, string secureConfig)
+    {
+        _connectionString = secureConfig;
+
+        _queueName = "customerqueue";
+    }
+
+    public void Execute(IServiceProvider serviceProvider)
+    {
+        var context =
+            (IPluginExecutionContext)serviceProvider.GetService(typeof(IPluginExecutionContext));
+
+        var tracing =
+            (ITracingService)serviceProvider.GetService(typeof(ITracingService));
+
+        if (!(context.InputParameters["Target"] is Entity account))
+            return;
+
+        var message = new
+        {
+            AccountId = account.Id,
+            Name = account.GetAttributeValue<string>("name"),
+            Phone = account.GetAttributeValue<string>("telephone1"),
+            CreatedOn = DateTime.UtcNow
+        };
+
+        string json = JsonConvert.SerializeObject(message);
+
+        SendToServiceBus(json).GetAwaiter().GetResult();
+
+        tracing.Trace("Message successfully sent to Azure Service Bus.");
+    }
+
+    private async Task SendToServiceBus(string message)
+    {
+        await using var client = new ServiceBusClient(_connectionString);
+
+        ServiceBusSender sender =
+            client.CreateSender(_queueName);
+
+        ServiceBusMessage busMessage =
+            new ServiceBusMessage(message);
+
+        await sender.SendMessageAsync(busMessage);
+    }
+}
+```
+
+---
+
+# Message Sent
+
+```json
+{
+  "AccountId": "cfe44a11-52ab-ef11-b8e8-000d3a123456",
+  "Name": "ABC Ltd",
+  "Phone": "9876543210",
+  "CreatedOn": "2026-07-31T15:00:00Z"
+}
+```
+
+---
+
+# Azure Function to Receive It
+
+```csharp
+using Azure.Messaging.ServiceBus;
+using Microsoft.Azure.Functions.Worker;
+using Microsoft.Extensions.Logging;
+
+public class ProcessCustomer
+{
+    private readonly ILogger _logger;
+
+    public ProcessCustomer(ILoggerFactory loggerFactory)
+    {
+        _logger = loggerFactory.CreateLogger<ProcessCustomer>();
+    }
+
+    [Function("ProcessCustomer")]
+    public void Run(
+        [ServiceBusTrigger("customerqueue",
+        Connection = "AzureServiceBus")]
+        ServiceBusReceivedMessage message)
+    {
+        string json = message.Body.ToString();
+
+        _logger.LogInformation(json);
+
+        // Deserialize
+
+        // Call SAP API
+
+        // Save response
+    }
+}
+```
+
+---
+
+# If You're Using a True ServiceEndpoint (Azure-Aware Plugin)
+
+The plugin code is just normal business logic; **you don't write code to send to Azure Service Bus**.
+
+```csharp
+using Microsoft.Xrm.Sdk;
+
+public class AccountPlugin : IPlugin
+{
+    public void Execute(IServiceProvider serviceProvider)
+    {
+        var context = (IPluginExecutionContext)
+            serviceProvider.GetService(typeof(IPluginExecutionContext));
+
+        var tracing = (ITracingService)
+            serviceProvider.GetService(typeof(ITracingService));
+
+        tracing.Trace("Account plugin executed.");
+
+        // Business logic here if needed.
+        // The registered ServiceEndpoint automatically receives the
+        // RemoteExecutionContext after this step executes.
+    }
+}
+```
+
+When you register this step against a **ServiceEndpoint**, Dataverse publishes the `RemoteExecutionContext` to Azure Service Bus automatically. There is **no `SendMessageAsync()` call in the plugin**.
+
+### Interview Tip
+
+If asked, *"Show me the plugin code for ServiceEndpoint"*, the best answer is:
+
+> "For a ServiceEndpoint (Azure-Aware Plugin), there is no code required to publish the message. I register the ServiceEndpoint in the Plugin Registration Tool, associate the step with it, and Dataverse automatically serializes and sends the `RemoteExecutionContext` to Azure Service Bus. If I need to send a custom payload instead of the execution context, I would use the Azure Service Bus SDK in a regular plugin, as shown in the manual example above."
