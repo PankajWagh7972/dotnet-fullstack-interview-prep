@@ -1410,3 +1410,240 @@ The business logic stays inside Dataverse, while the flow handles orchestration 
 | Recommended by Microsoft for new development | ✅ Yes      | ❌ No                    |
 
 For new Dataverse development, **Custom API is the recommended approach** over classic Actions because it offers a cleaner, strongly defined contract and better long-term maintainability.
+
+
+## What is `CrmServiceClient`?
+
+`CrmServiceClient` is a class from the **Microsoft.Xrm.Tooling.Connector** library that simplifies connecting to **Dynamics 365 (CRM)/Dataverse**. It handles authentication and provides an `IOrganizationService` instance to perform CRUD operations, execute requests, and invoke custom actions/APIs.
+
+> **Note:** `CrmServiceClient` is considered a **legacy** client. For new applications, Microsoft recommends using **ServiceClient** from the `Microsoft.PowerPlatform.Dataverse.Client` package.
+
+---
+
+# Purpose of `CrmServiceClient`
+
+It is mainly used by:
+
+* Console Applications
+* Windows Services
+* Azure Functions (older implementations)
+* Data Migration Tools
+* Integration Applications
+* Scheduled Jobs
+
+It is **not** used inside plug-ins because plug-ins already receive an `IOrganizationService` from the execution context.
+
+---
+
+# Architecture
+
+```text
+Console App
+
+        │
+        ▼
+
+CrmServiceClient
+
+        │
+        ▼
+
+Authenticate
+
+        │
+        ▼
+
+IOrganizationService
+
+        │
+        ▼
+
+Dataverse
+```
+
+---
+
+# Install Package
+
+```text
+Microsoft.CrmSdk.XrmTooling.CoreAssembly
+```
+
+---
+
+# Example 1: Connect Using Connection String
+
+```csharp
+using Microsoft.Xrm.Tooling.Connector;
+using Microsoft.Xrm.Sdk;
+
+string connectionString =
+@"AuthType=OAuth;
+Url=https://contoso.crm.dynamics.com;
+Username=user@contoso.com;
+Password=Password123;
+AppId=51f81489-12ee-4a9e-aaae-a2591f45987d;
+RedirectUri=http://localhost;";
+
+CrmServiceClient crmClient =
+    new CrmServiceClient(connectionString);
+
+IOrganizationService service =
+    crmClient.OrganizationServiceProxy ??
+    (IOrganizationService)crmClient.OrganizationWebProxyClient;
+```
+
+Now `service` can perform all Dataverse operations.
+
+---
+
+# Example 2: Create an Account
+
+```csharp
+Entity account = new Entity("account");
+
+account["name"] = "ABC Technologies";
+account["telephone1"] = "9876543210";
+
+Guid accountId = service.Create(account);
+
+Console.WriteLine(accountId);
+```
+
+---
+
+# Example 3: Retrieve a Record
+
+```csharp
+Entity account = service.Retrieve(
+    "account",
+    accountId,
+    new ColumnSet("name", "telephone1"));
+
+Console.WriteLine(account["name"]);
+```
+
+---
+
+# Example 4: Update
+
+```csharp
+Entity account = new Entity("account");
+
+account.Id = accountId;
+account["telephone1"] = "9999999999";
+
+service.Update(account);
+```
+
+---
+
+# Example 5: Delete
+
+```csharp
+service.Delete("account", accountId);
+```
+
+---
+
+# Example 6: Execute a Custom API
+
+```csharp
+OrganizationRequest request =
+    new OrganizationRequest("new_CreateInvoice");
+
+request["OpportunityId"] = opportunityId;
+
+OrganizationResponse response =
+    service.Execute(request);
+
+Console.WriteLine(response["InvoiceNumber"]);
+```
+
+---
+
+# Example 7: Execute WhoAmI
+
+```csharp
+WhoAmIRequest request = new WhoAmIRequest();
+
+WhoAmIResponse response =
+    (WhoAmIResponse)service.Execute(request);
+
+Console.WriteLine(response.UserId);
+```
+
+---
+
+# Real-World Scenario
+
+Imagine you need to migrate 500,000 customer records from SQL Server to Dataverse.
+
+```text
+SQL Server
+
+      │
+
+Console App
+
+      │
+
+CrmServiceClient
+
+      │
+
+IOrganizationService
+
+      │
+
+Dataverse
+```
+
+The console application:
+
+1. Reads data from SQL Server.
+2. Uses `CrmServiceClient` to authenticate.
+3. Creates or updates records in Dataverse.
+4. Logs failures and retries as needed.
+
+---
+
+# Why Not in a Plug-in?
+
+Inside a plug-in, authentication is already handled by the platform.
+
+Instead of creating a `CrmServiceClient`, you obtain `IOrganizationService` like this:
+
+```csharp
+IOrganizationServiceFactory factory =
+    (IOrganizationServiceFactory)
+    serviceProvider.GetService(typeof(IOrganizationServiceFactory));
+
+IOrganizationService service =
+    factory.CreateOrganizationService(context.UserId);
+```
+
+Creating a new `CrmServiceClient` inside a plug-in would be unnecessary and inefficient because it performs a separate authentication.
+
+---
+
+# Modern Replacement: `ServiceClient`
+
+For new development, use `ServiceClient`.
+
+```csharp
+using Microsoft.PowerPlatform.Dataverse.Client;
+
+ServiceClient serviceClient =
+    new ServiceClient(connectionString);
+
+serviceClient.Create(account);
+```
+
+`ServiceClient` is the successor to `CrmServiceClient`, supports modern authentication (including Microsoft Entra ID), receives active updates, and is the recommended choice for new applications.
+
+---
+
+# Interview Answer (2 Minutes)
+
+> `CrmServiceClient` is a client class from the XRM Tooling library that simplifies connecting external .NET applications to Dynamics 365 or Dataverse. It manages authentication and exposes an `IOrganizationService` that can be used to create, retrieve, update, delete, query records, execute requests, and invoke custom APIs. It is commonly used in console applications, migration utilities, Azure Functions, and integration services. It is **not** used inside plug-ins because plug-ins already receive an authenticated `IOrganizationService` from the platform. For new projects, Microsoft recommends using `ServiceClient` from the `Microsoft.PowerPlatform.Dataverse.Client` package instead.
