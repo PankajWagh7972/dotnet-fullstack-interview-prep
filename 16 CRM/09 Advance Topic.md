@@ -444,3 +444,303 @@ The Sales User doesn't need Contract permissions, but the plugin can still compl
 # Interview Answer (2 Minutes)
 
 > **Impersonation** means executing Dataverse operations under the security context of a different user than the one who triggered the plugin. It's implemented by creating an `IOrganizationService` with `IOrganizationServiceFactory.CreateOrganizationService(userId)`. The impersonated user's security roles determine what operations are allowed. This is useful when a business process requires permissions that the initiating user doesn't have, such as creating finance records or integrating with restricted entities. Another option is to configure the plugin step to run as a specific user in the Plugin Registration Tool, which applies that security context to the entire plugin execution.
+
+
+---
+This is one of the **most frequently asked Dynamics 365 plugin interview questions**.
+
+The key difference is **when** they execute and **whether they are inside the database transaction**.
+
+---
+
+# Execution Pipeline
+
+```text
+                Request Received
+                       │
+                       ▼
+               Pre-Validation (Stage 10)
+                       │
+             Security Checks (mostly)
+                       │
+                       ▼
+               Pre-Operation (Stage 20)
+                       │
+                Database Transaction
+                       │
+                       ▼
+                 Core Operation
+               (Create/Update/Delete)
+                       │
+                       ▼
+              Post-Operation (Stage 40)
+```
+
+---
+
+# Comparison
+
+| Feature                          | Pre-Validation                      | Pre-Operation                                    |
+| -------------------------------- | ----------------------------------- | ------------------------------------------------ |
+| Stage                            | 10                                  | 20                                               |
+| Runs before security checks      | Yes (for the initial request)       | No                                               |
+| Runs inside database transaction | ❌ No                                | ✅ Yes                                            |
+| Can modify `Target` entity       | ✅ Yes                               | ✅ Yes                                            |
+| Can cancel the operation         | ✅ Yes                               | ✅ Yes                                            |
+| Best for                         | Early validation, business rules    | Data modification, calculations, related updates |
+| Performance                      | Better (no transaction started yet) | Slightly slower (inside transaction)             |
+
+---
+
+# Pre-Validation Plugin
+
+### Purpose
+
+Use it to **validate** whether the operation should continue before the transaction starts.
+
+Examples:
+
+* Duplicate checks
+* Mandatory business rules
+* Validate business hours
+* Block deletion
+* Check external conditions
+
+Example:
+
+> Don't allow deleting an Account if it has active Opportunities.
+
+```text
+Delete Account
+
+↓
+
+Pre-Validation
+
+↓
+
+Check Active Opportunities
+
+↓
+
+Found
+
+↓
+
+Throw Exception
+
+↓
+
+Delete Never Starts
+```
+
+Example code:
+
+```csharp
+if (activeOpportunityCount > 0)
+{
+    throw new InvalidPluginExecutionException(
+        "Cannot delete account with active opportunities.");
+}
+```
+
+Because the transaction hasn't started, you avoid unnecessary transaction overhead.
+
+---
+
+# Pre-Operation Plugin
+
+### Purpose
+
+Use it when you want to **modify the data** before it is saved.
+
+Examples:
+
+* Auto-generate values
+* Calculate totals
+* Set default fields
+* Update lookup values
+* Normalize data
+
+Example
+
+User enters
+
+```text
+Name
+
+Pankaj
+```
+
+Plugin changes
+
+```text
+Name
+
+PANKAJ
+```
+
+before saving.
+
+Code
+
+```csharp
+Entity target =
+    (Entity)context.InputParameters["Target"];
+
+target["name"] =
+    target.GetAttributeValue<string>("name").ToUpper();
+```
+
+No extra Update call is required because you're modifying the `Target` before it is persisted.
+
+---
+
+# Real Project Example 1
+
+**Loan Approval**
+
+Requirement
+
+```text
+Loan Amount
+
+↓
+
+Validate Credit Score
+
+↓
+
+Reject if score < 650
+```
+
+Use:
+
+✅ **Pre-Validation**
+
+Reason:
+
+Don't start a transaction if the request will be rejected.
+
+---
+
+# Real Project Example 2
+
+Calculate Invoice Total
+
+```text
+Invoice
+
+↓
+
+Calculate GST
+
+↓
+
+Calculate Discount
+
+↓
+
+Save Total
+```
+
+Use:
+
+✅ **Pre-Operation**
+
+Reason:
+
+You're modifying the record before it is saved.
+
+---
+
+# Real Project Example 3
+
+Prevent Duplicate Email
+
+```text
+Create Contact
+
+↓
+
+Pre-Validation
+
+↓
+
+Email Exists?
+
+↓
+
+Yes
+
+↓
+
+Throw Exception
+```
+
+No transaction is opened.
+
+---
+
+# Real Project Example 4
+
+Auto Number
+
+```text
+Create Account
+
+↓
+
+Pre-Operation
+
+↓
+
+Generate Account Number
+
+↓
+
+Save Record
+```
+
+---
+
+# When to Choose Which?
+
+### Use Pre-Validation
+
+* Validate business rules.
+* Cancel invalid operations.
+* Prevent unnecessary transactions.
+* Check external conditions before processing.
+
+### Use Pre-Operation
+
+* Modify entity attributes.
+* Set default values.
+* Calculate fields.
+* Update related values before saving.
+* Ensure all changes are committed in the same transaction.
+
+---
+
+# Common Interview Question
+
+**Q:** Where should I calculate a Total Amount?
+
+**Answer:**
+
+**Pre-Operation**, because you want the calculated value to be saved as part of the same database transaction.
+
+---
+
+**Q:** Where should I stop duplicate record creation?
+
+**Answer:**
+
+**Pre-Validation**, because it's better to reject the request before the transaction begins.
+
+---
+
+# Interview Answer (2 Minutes)
+
+> **Pre-Validation** plugins execute first, before the main database transaction starts. They are ideal for validating requests, enforcing business rules, preventing duplicate records, or cancelling operations early, which avoids unnecessary transaction overhead. **Pre-Operation** plugins execute inside the database transaction, just before Dataverse performs the core operation. They are best suited for modifying the `Target` entity, calculating values, setting default fields, or making related updates that should be committed atomically with the main operation. In general, I use **Pre-Validation** for validation and **Pre-Operation** for data modification.
