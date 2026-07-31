@@ -1011,3 +1011,337 @@ If you're checking **privileges** rather than just role names, it's generally be
 # Interview Answer (2 Minutes)
 
 > In a plugin, I obtain the current user's ID from `IPluginExecutionContext.UserId` (or `InitiatingUserId` if I need the original caller). I then query the `role` table and join it with the `systemuserroles` intersect table using `QueryExpression` or `FetchXML` to retrieve all roles assigned to that user. I can iterate through the returned roles or check for a specific role before allowing a business operation. For authorization decisions, I prefer relying on Dataverse security privileges where possible instead of hardcoding role names, since role names can differ across environments.
+---
+This is a common **Dynamics 365/Power Platform ALM** interview question.
+
+The interviewer wants to know **how you avoid hardcoding environment-specific values** such as:
+
+* API URLs
+* Azure Function URLs
+* Service Bus connection strings
+* Key Vault URLs
+* Storage Account URLs
+* Feature flags
+
+---
+
+# Short Answer
+
+> Environment-specific values should **never be hardcoded** in a plug-in. The recommended approach is to use **Environment Variables** in Dataverse. Other options include **Secure/Unsecure Plugin Configuration**, **Azure Key Vault**, or **Custom Configuration Entities**, depending on the type of configuration and security requirements.
+
+---
+
+# Option 1 (Recommended): Environment Variables ⭐⭐⭐⭐⭐
+
+Microsoft's recommended approach.
+
+### Example
+
+Development
+
+```text
+API URL
+
+https://dev-api.company.com
+```
+
+UAT
+
+```text
+https://uat-api.company.com
+```
+
+Production
+
+```text
+https://api.company.com
+```
+
+No code changes.
+
+---
+
+## Architecture
+
+```text
+Solution
+
+↓
+
+Environment Variable
+
+↓
+
+Current Environment Value
+
+↓
+
+Plugin
+
+↓
+
+Call API
+```
+
+---
+
+## Create Environment Variable
+
+```text
+Solution
+
+↓
+
+New
+
+↓
+
+Environment Variable
+
+↓
+
+Name
+
+API_URL
+
+↓
+
+Default Value
+
+https://dev-api.company.com
+```
+
+Each environment overrides only the value.
+
+---
+
+## Read Environment Variable
+
+```csharp
+QueryExpression query = new QueryExpression("environmentvariabledefinition")
+{
+    ColumnSet = new ColumnSet("schemaname")
+};
+
+query.Criteria.AddCondition(
+    "schemaname",
+    ConditionOperator.Equal,
+    "API_URL");
+
+LinkEntity valueLink = query.AddLink(
+    "environmentvariablevalue",
+    "environmentvariabledefinitionid",
+    "environmentvariabledefinitionid",
+    JoinOperator.LeftOuter);
+
+valueLink.Columns = new ColumnSet("value");
+valueLink.EntityAlias = "Value";
+
+Entity result = service.RetrieveMultiple(query).Entities.FirstOrDefault();
+
+string apiUrl =
+    ((AliasedValue)result["Value.value"]).Value.ToString();
+```
+
+Now
+
+```text
+https://api.company.com
+```
+
+is automatically read from the current environment.
+
+---
+
+# Option 2: Secure/Unsecure Plugin Configuration ⭐⭐⭐⭐
+
+Good for plugin-specific configuration.
+
+Secure
+
+```text
+API Key
+
+OAuth Secret
+
+Connection String
+```
+
+Unsecure
+
+```text
+API URL
+
+Timeout
+
+Retry Count
+```
+
+Plugin
+
+```csharp
+public AccountPlugin(
+    string unsecure,
+    string secure)
+{
+    _apiUrl = unsecure;
+
+    _apiKey = secure;
+}
+```
+
+---
+
+# Option 3: Azure Key Vault ⭐⭐⭐⭐⭐
+
+Best for secrets.
+
+```text
+Plugin
+
+↓
+
+Key Vault
+
+↓
+
+Secret
+
+↓
+
+API Key
+```
+
+Never store
+
+```text
+Client Secret
+
+OAuth Secret
+
+Certificate Password
+```
+
+inside Dataverse.
+
+---
+
+# Option 4: Custom Configuration Table ⭐⭐⭐
+
+Create
+
+```text
+Configuration
+
+Name
+
+Value
+```
+
+Example
+
+| Name       | Value                                              |
+| ---------- | -------------------------------------------------- |
+| ApiUrl     | [https://api.company.com](https://api.company.com) |
+| RetryCount | 5                                                  |
+| Timeout    | 60                                                 |
+
+Plugin
+
+```csharp
+QueryExpression query =
+    new QueryExpression("new_configuration");
+
+query.Criteria.AddCondition(
+    "new_name",
+    ConditionOperator.Equal,
+    "ApiUrl");
+
+Entity config =
+    service.RetrieveMultiple(query)
+    .Entities
+    .FirstOrDefault();
+```
+
+Useful when business users need to update configuration without redeploying.
+
+---
+
+# Option 5: Azure App Configuration
+
+Common in Azure-hosted integrations.
+
+```text
+Plugin
+
+↓
+
+Azure App Configuration
+
+↓
+
+Settings
+```
+
+Mostly used by Azure Functions and APIs rather than plugins.
+
+---
+
+# Which Should You Use?
+
+| Configuration      | Best Choice                                      |
+| ------------------ | ------------------------------------------------ |
+| API URL            | ✅ Environment Variable                           |
+| Azure Function URL | ✅ Environment Variable                           |
+| Retry Count        | ✅ Environment Variable                           |
+| Feature Flag       | ✅ Environment Variable                           |
+| API Secret         | ✅ Azure Key Vault or Secure Plugin Configuration |
+| OAuth Secret       | ✅ Azure Key Vault                                |
+| Connection String  | ✅ Azure Key Vault                                |
+
+---
+
+# Real Project Example
+
+Suppose your company has three environments.
+
+```
+Development
+
+↓
+
+https://dev-api.company.com
+
+----------------------------
+
+UAT
+
+↓
+
+https://uat-api.company.com
+
+----------------------------
+
+Production
+
+↓
+
+https://api.company.com
+```
+
+Your plugin reads the `API_URL` environment variable. During deployment, only the environment variable value changes—**the plugin assembly remains the same**, making deployments safer and easier.
+
+---
+
+# Best Practices
+
+* ✅ Use **Environment Variables** for environment-specific settings like URLs and feature flags.
+* ✅ Use **Secure Plugin Configuration** or **Azure Key Vault** for secrets.
+* ✅ Avoid hardcoding URLs or credentials in code.
+* ✅ Cache configuration values when appropriate to reduce repeated Dataverse queries.
+
+---
+
+# Interview Answer (2 Minutes)
+
+> I avoid hardcoding environment-specific values in plugins. For values such as API URLs, Azure Function endpoints, or feature flags, I use **Dataverse Environment Variables**, which allow different values in Development, UAT, and Production without changing the plugin code. For sensitive information like API keys, client secrets, or connection strings, I use **Secure Plugin Configuration** or, preferably, **Azure Key Vault**. This approach follows ALM best practices, keeps deployments consistent across environments, and improves security and maintainability.
