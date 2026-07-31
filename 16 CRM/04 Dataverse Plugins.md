@@ -253,3 +253,308 @@ public AccountPlugin(string unsecure, string secure)
 | **Prefer**                 | JSON for complex settings                                      | Easier to extend and maintain than custom-delimited strings.        |
 
 > **Interview Tip:** Secure and unsecure configuration values are injected into the plug-in **constructor** during instantiation. The constructor typically stores them in private fields, and the `Execute` method uses those cached values. They are **not** retrieved from `IServiceProvider` during each execution.
+
+
+A **ServiceEndpoint** in Dynamics 365/Dataverse represents an Azure messaging endpoint (Azure Service Bus Queue, Topic, or Event Hub). Instead of performing a long-running operation inside the plugin, you send the execution context to Azure, where another application processes it asynchronously.
+
+## Architecture
+
+```text
+User Creates Account
+        │
+        ▼
+Dynamics 365
+        │
+        ▼
+Plugin Executes
+        │
+        ▼
+Azure Service Bus Queue / Topic
+        │
+        ▼
+Azure Function / .NET Worker / WebJob
+        │
+        ▼
+SAP / ERP / CRM / Email Service / Any External System
+```
+
+---
+
+# Real-World Scenario
+
+Suppose your company wants to sync every new customer created in Dynamics 365 to SAP.
+
+❌ **Bad approach**
+
+```
+User Creates Account
+
+↓
+
+Plugin Calls SAP API
+
+↓
+
+SAP Takes 10 Seconds
+
+↓
+
+CRM Form Waits
+
+↓
+
+Possible Timeout
+```
+
+The user experiences delays, and synchronous plugins have execution time limits.
+
+---
+
+✅ **Better approach using ServiceEndpoint**
+
+```
+User Creates Account
+
+↓
+
+Plugin
+
+↓
+
+Azure Service Bus Queue
+
+↓
+
+Plugin Finishes Immediately
+
+↓
+
+Azure Function Reads Queue
+
+↓
+
+Calls SAP
+
+↓
+
+Updates SAP
+```
+
+The user doesn't wait for SAP.
+
+---
+
+# Step 1 - Create Azure Service Bus
+
+```
+Namespace
+    ↓
+CustomerQueue
+```
+
+---
+
+# Step 2 - Register Service Endpoint
+
+Using the **Plugin Registration Tool**
+
+```
+Register
+
+↓
+
+New Service Endpoint
+
+↓
+
+Azure Service Bus Queue
+
+↓
+
+Connection String
+
+↓
+
+Queue Name
+```
+
+It creates a **ServiceEndpoint** record in Dataverse.
+
+---
+
+# Step 3 - Register Plugin Step
+
+Instead of:
+
+```
+Create of Account
+
+↓
+
+Plugin
+```
+
+Register:
+
+```
+Create of Account
+
+↓
+
+Azure Aware Plugin
+```
+
+or associate the ServiceEndpoint with the plugin registration, depending on your integration pattern.
+
+---
+
+# What Gets Sent?
+
+Dynamics sends a serialized **RemoteExecutionContext**.
+
+It contains almost everything a normal plugin receives:
+
+* Message Name
+* Primary Entity
+* Target Entity
+* User Id
+* Correlation Id
+* Input Parameters
+* Images
+* Shared Variables
+* Organization Id
+
+Example:
+
+```json
+{
+    "MessageName":"Create",
+    "PrimaryEntityName":"account",
+    "BusinessUnitId":"...",
+    "UserId":"...",
+    "InputParameters":
+    {
+        "Target":
+        {
+            "name":"ABC Ltd",
+            "telephone1":"9876543210"
+        }
+    }
+}
+```
+
+---
+
+# Azure Function Example
+
+```csharp
+using Microsoft.Azure.WebJobs;
+using Microsoft.Extensions.Logging;
+
+public class CustomerSync
+{
+    [FunctionName("CustomerSync")]
+    public void Run(
+        [ServiceBusTrigger("customerqueue",
+        Connection = "ServiceBusConnection")]
+        string message,
+        ILogger log)
+    {
+        log.LogInformation(message);
+
+        // Deserialize RemoteExecutionContext
+
+        // Read Account
+
+        // Send to SAP
+
+        // Save response
+    }
+}
+```
+
+---
+
+# Azure Worker Service Example
+
+```csharp
+await foreach (var message in processor.ReceiveMessagesAsync())
+{
+    Console.WriteLine(message.Body);
+
+    // Deserialize
+
+    // Process
+
+    // Call ERP
+
+    // Complete Message
+}
+```
+
+---
+
+# Complete Flow
+
+```text
+Create Account
+
+↓
+
+Plugin Fires
+
+↓
+
+RemoteExecutionContext Created
+
+↓
+
+Serialized
+
+↓
+
+Azure Service Bus Queue
+
+↓
+
+Azure Function Trigger
+
+↓
+
+Deserialize Context
+
+↓
+
+Extract Account
+
+↓
+
+Call SAP REST API
+
+↓
+
+Store Success/Failure
+```
+
+---
+
+# When Should You Use ServiceEndpoint?
+
+Use it when:
+
+* Integrating with SAP, Oracle, Salesforce, or other external systems.
+* Sending CRM events to microservices.
+* Triggering Azure Functions asynchronously.
+* Processing large workloads outside Dataverse.
+* Building event-driven architectures.
+
+Avoid it for:
+
+* Immediate validation that must block the transaction.
+* Operations where the user needs an instant response before the record is saved.
+
+---
+
+# Interview Answer (2–3 Minutes)
+
+> A **ServiceEndpoint** is a Dataverse entity that represents an Azure messaging endpoint such as an Azure Service Bus Queue, Topic, or Event Hub. It enables Dynamics 365 to publish the `RemoteExecutionContext` to Azure instead of performing lengthy processing inside the plugin. This is commonly used for asynchronous integrations with systems like SAP or external microservices. For example, when an Account is created, the plugin posts the execution context to an Azure Service Bus queue. An Azure Function subscribed to that queue processes the message, calls the external API, handles retries or failures independently, and updates the external system without delaying the user's transaction. This approach improves scalability, resilience, and overall user experience.
