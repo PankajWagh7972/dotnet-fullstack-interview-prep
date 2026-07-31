@@ -727,3 +727,240 @@ When you register this step against a **ServiceEndpoint**, Dataverse publishes t
 If asked, *"Show me the plugin code for ServiceEndpoint"*, the best answer is:
 
 > "For a ServiceEndpoint (Azure-Aware Plugin), there is no code required to publish the message. I register the ServiceEndpoint in the Plugin Registration Tool, associate the step with it, and Dataverse automatically serializes and sends the `RemoteExecutionContext` to Azure Service Bus. If I need to send a custom payload instead of the execution context, I would use the Azure Service Bus SDK in a regular plugin, as shown in the manual example above."
+
+
+There are **three common ways** to call a Power Automate flow from a Dynamics 365 plug-in.
+
+## Option 1 (Recommended): Call the Flow's HTTP Trigger
+
+This is the most common and interview-friendly approach.
+
+### Flow
+
+Create a Power Automate flow:
+
+```text
+When an HTTP request is received
+        │
+        ▼
+Parse JSON
+        │
+        ▼
+Create Record / Send Email / Approval
+        │
+        ▼
+Response
+```
+
+Example JSON Schema:
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "AccountId": {
+      "type": "string"
+    },
+    "Name": {
+      "type": "string"
+    },
+    "Phone": {
+      "type": "string"
+    }
+  }
+}
+```
+
+After saving the flow, you'll get an HTTP URL like:
+
+```text
+https://prod-45.westus.logic.azure.com/workflows/...
+```
+
+---
+
+## Plugin Code
+
+```csharp
+using Microsoft.Xrm.Sdk;
+using Newtonsoft.Json;
+using System;
+using System.Net.Http;
+using System.Text;
+
+public class AccountPlugin : IPlugin
+{
+    // Store in Secure Configuration
+    private readonly string _flowUrl;
+
+    public AccountPlugin(string unsecureConfig, string secureConfig)
+    {
+        _flowUrl = secureConfig;
+    }
+
+    public void Execute(IServiceProvider serviceProvider)
+    {
+        var context = (IPluginExecutionContext)
+            serviceProvider.GetService(typeof(IPluginExecutionContext));
+
+        if (!(context.InputParameters["Target"] is Entity account))
+            return;
+
+        var payload = new
+        {
+            AccountId = account.Id,
+            Name = account.GetAttributeValue<string>("name"),
+            Phone = account.GetAttributeValue<string>("telephone1")
+        };
+
+        var json = JsonConvert.SerializeObject(payload);
+
+        using var client = new HttpClient();
+
+        var content = new StringContent(
+            json,
+            Encoding.UTF8,
+            "application/json");
+
+        HttpResponseMessage response =
+            client.PostAsync(_flowUrl, content).Result;
+
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new InvalidPluginExecutionException(
+                "Failed to trigger Power Automate.");
+        }
+    }
+}
+```
+
+---
+
+## Flow Receives
+
+```json
+{
+    "AccountId":"5dfe3d...",
+    "Name":"ABC Ltd",
+    "Phone":"9876543210"
+}
+```
+
+---
+
+## Option 2: Trigger Flow from Dataverse
+
+Instead of calling HTTP:
+
+```
+Plugin
+
+↓
+
+Update/Create Record
+
+↓
+
+Power Automate Trigger
+
+"When a row is added or modified"
+
+↓
+
+Flow Executes
+```
+
+Example Plugin
+
+```csharp
+Entity request = new Entity("new_syncrequest");
+
+request["new_name"] = "Sync Customer";
+request["new_accountid"] = account.ToEntityReference();
+
+service.Create(request);
+```
+
+Flow Trigger
+
+```
+When a row is added
+
+Table:
+new_syncrequest
+```
+
+This approach is fully asynchronous and avoids HTTP calls.
+
+---
+
+## Option 3: Custom API + Flow
+
+```
+Plugin
+
+↓
+
+Custom API
+
+↓
+
+Power Automate
+
+↓
+
+External System
+```
+
+This is useful when multiple applications need to invoke the same business process.
+
+---
+
+# Real Project Example
+
+**Requirement**
+
+Whenever an Opportunity is Won:
+
+* Send approval email
+* Create a Teams notification
+* Update SharePoint
+* Create Planner task
+
+**Architecture**
+
+```text
+Opportunity Won
+
+↓
+
+Plugin
+
+↓
+
+HTTP POST
+
+↓
+
+Power Automate
+
+├── Send Outlook Email
+├── Teams Notification
+├── Planner Task
+└── SharePoint Update
+```
+
+---
+
+# Best Practices
+
+* Use an **HTTP-triggered flow** when the plug-in needs to invoke the flow immediately.
+* Store the Flow URL (and any authentication secret, if applicable) in the **Secure Configuration** or another secure configuration store—don't hardcode it.
+* Set a reasonable timeout and handle failures gracefully.
+* For long-running work, prefer **asynchronous plugins** or let a Dataverse-triggered flow react to a created/updated record instead of blocking a synchronous transaction.
+
+---
+
+# Interview Answer (2 Minutes)
+
+> The most common way to call a Power Automate flow from a plug-in is to create an **HTTP-triggered flow** using the **"When an HTTP request is received"** trigger. The flow exposes a secure endpoint URL. In the plug-in, I serialize the required data into JSON and send it using `HttpClient.PostAsync()`. The flow processes the payload and can perform actions such as sending emails, creating SharePoint items, posting Teams messages, or integrating with external systems. For decoupled, asynchronous processing, another common pattern is to have the plug-in create or update a Dataverse record and let a Power Automate flow start from the **"When a row is added, modified, or deleted"** trigger.
