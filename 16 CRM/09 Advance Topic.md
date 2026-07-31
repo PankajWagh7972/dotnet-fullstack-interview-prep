@@ -1345,3 +1345,273 @@ Your plugin reads the `API_URL` environment variable. During deployment, only th
 # Interview Answer (2 Minutes)
 
 > I avoid hardcoding environment-specific values in plugins. For values such as API URLs, Azure Function endpoints, or feature flags, I use **Dataverse Environment Variables**, which allow different values in Development, UAT, and Production without changing the plugin code. For sensitive information like API keys, client secrets, or connection strings, I use **Secure Plugin Configuration** or, preferably, **Azure Key Vault**. This approach follows ALM best practices, keeps deployments consistent across environments, and improves security and maintainability.
+
+
+---
+This is one of the **most frequently asked Dynamics 365 plugin interview questions**.
+
+The correct answer is:
+
+* **Previous (Old) Value** → **Pre Image**
+* **New Value** → **Target Entity** (Pre-Operation) or **Post Image** (Post-Operation)
+
+---
+
+# Short Answer
+
+> In an Update plugin, the previous value is obtained from the **Pre Entity Image**, while the new value comes from the **Target** entity in Pre-Operation or the **Post Entity Image** in Post-Operation. Since the `Target` only contains changed attributes, it's common to combine `Target` with the Pre Image to determine old and new values.
+
+---
+
+# Update Pipeline
+
+```text
+User Updates Account
+
+Name
+ABC Ltd
+
+↓
+
+Changes Name
+
+ABC Technologies
+
+↓
+
+Pre Image
+Name = ABC Ltd
+
+↓
+
+Target
+Name = ABC Technologies
+
+↓
+
+Database Update
+
+↓
+
+Post Image
+Name = ABC Technologies
+```
+
+---
+
+# Plugin Registration
+
+When registering the plugin, configure:
+
+```
+Pre Image
+
+Alias:
+PreImage
+
+Attributes:
+name,emailaddress1,telephone1
+```
+
+Optionally configure
+
+```
+Post Image
+
+Alias:
+PostImage
+```
+
+---
+
+# Access Previous Value (Pre Image)
+
+```csharp
+Entity preImage =
+    context.PreEntityImages["PreImage"];
+
+string oldName =
+    preImage.GetAttributeValue<string>("name");
+```
+
+Output
+
+```
+ABC Ltd
+```
+
+---
+
+# Access New Value (Target)
+
+```csharp
+Entity target =
+    (Entity)context.InputParameters["Target"];
+
+string newName =
+    target.GetAttributeValue<string>("name");
+```
+
+Output
+
+```
+ABC Technologies
+```
+
+> **Important:** The `Target` contains **only the fields that were changed**. If `name` wasn't modified, it won't be present.
+
+---
+
+# Complete Example
+
+```csharp
+public class AccountPlugin : IPlugin
+{
+    public void Execute(IServiceProvider serviceProvider)
+    {
+        var context =
+            (IPluginExecutionContext)
+            serviceProvider.GetService(typeof(IPluginExecutionContext));
+
+        Entity target =
+            (Entity)context.InputParameters["Target"];
+
+        Entity preImage =
+            context.PreEntityImages["PreImage"];
+
+        string oldName =
+            preImage.GetAttributeValue<string>("name");
+
+        string newName =
+            target.GetAttributeValue<string>("name");
+
+        if(oldName != newName)
+        {
+            // Log changes
+
+            // Send Email
+
+            // Audit
+        }
+    }
+}
+```
+
+---
+
+# Safer Implementation
+
+Since the `Target` may not contain every attribute:
+
+```csharp
+string oldName =
+    preImage.GetAttributeValue<string>("name");
+
+string newName = target.Contains("name")
+    ? target.GetAttributeValue<string>("name")
+    : oldName;
+```
+
+This avoids exceptions and correctly handles updates where `name` wasn't changed.
+
+---
+
+# Using Post Image
+
+If you need the final saved values after the database update:
+
+```csharp
+Entity postImage =
+    context.PostEntityImages["PostImage"];
+
+string updatedName =
+    postImage.GetAttributeValue<string>("name");
+```
+
+---
+
+# Compare Old vs New
+
+```csharp
+if(oldName != newName)
+{
+    tracing.Trace(
+        $"Name changed from {oldName} to {newName}");
+}
+```
+
+---
+
+# Real Project Example
+
+### Requirement
+
+Whenever a customer's credit limit changes:
+
+* Store old limit
+* Store new limit
+* Notify Finance
+
+```
+Pre Image
+
+Credit Limit = 10000
+
+↓
+
+Target
+
+Credit Limit = 15000
+
+↓
+
+Plugin
+
+↓
+
+Audit Log
+
+Old : 10000
+
+New : 15000
+```
+
+Implementation:
+
+```csharp
+Money oldLimit =
+    preImage.GetAttributeValue<Money>("creditlimit");
+
+Money newLimit =
+    target.GetAttributeValue<Money>("creditlimit");
+
+if(oldLimit.Value != newLimit.Value)
+{
+    // Notify Finance
+}
+```
+
+---
+
+# Pre Image vs Target vs Post Image
+
+| Source         | Contains                    | Use For                |
+| -------------- | --------------------------- | ---------------------- |
+| **Pre Image**  | Record values before update | Old values             |
+| **Target**     | Only changed attributes     | New values being saved |
+| **Post Image** | Record values after update  | Final persisted values |
+
+---
+
+# Best Practices
+
+* Configure only the attributes you need in **Pre/Post Images** to reduce overhead.
+* Always check `target.Contains("fieldname")` before reading from `Target`.
+* Prefer **Pre Images** over calling `Retrieve()` for old values—they're faster and avoid extra database calls.
+* Use **Post Images** when you need calculated values or the final saved state after the operation.
+
+---
+
+# Interview Answer (2 Minutes)
+
+> In an Update plugin, I use the **Pre Entity Image** to access the previous values of fields and the **Target** entity to access the new values being submitted. Since the Target only contains attributes that have changed, I first check `target.Contains("fieldname")` before reading them. If I need the final values after the record is saved, I use the **Post Entity Image**. Using Pre and Post Images is preferable to calling `Retrieve()` because it avoids additional database calls and improves plugin performance.
