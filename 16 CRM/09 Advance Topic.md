@@ -1615,3 +1615,321 @@ if(oldLimit.Value != newLimit.Value)
 # Interview Answer (2 Minutes)
 
 > In an Update plugin, I use the **Pre Entity Image** to access the previous values of fields and the **Target** entity to access the new values being submitted. Since the Target only contains attributes that have changed, I first check `target.Contains("fieldname")` before reading them. If I need the final values after the record is saved, I use the **Post Entity Image**. Using Pre and Post Images is preferable to calling `Retrieve()` because it avoids additional database calls and improves plugin performance.
+---
+
+This is an advanced **Dynamics 365 / Dataverse plugin interview** question.
+
+The interviewer wants to know whether you know how to retrieve **entity, attribute, option set, and relationship metadata** using the Dataverse SDK.
+
+---
+
+# Short Answer
+
+> Metadata in a plugin is queried using the **Metadata API** through `IOrganizationService.Execute()`. The SDK provides requests such as `RetrieveEntityRequest`, `RetrieveAttributeRequest`, `RetrieveOptionSetRequest`, and `RetrieveMetadataChangesRequest` to retrieve entity definitions, attributes, option sets, relationships, and other metadata.
+
+---
+
+# Metadata Examples
+
+Metadata includes:
+
+* Entity Logical Name
+* Display Name
+* Attributes
+* Primary Key
+* Primary Name Field
+* Option Sets (Choices)
+* Relationships (1:N, N:N)
+* Alternate Keys
+
+Example:
+
+```text
+Account
+
+Logical Name : account
+
+Display Name : Account
+
+Primary Id : accountid
+
+Primary Name : name
+```
+
+---
+
+# Architecture
+
+```text
+Plugin
+
+↓
+
+IOrganizationService
+
+↓
+
+RetrieveEntityRequest
+
+↓
+
+Metadata
+
+↓
+
+EntityMetadata
+```
+
+---
+
+# Example 1: Retrieve Entity Metadata
+
+```csharp
+using Microsoft.Xrm.Sdk.Messages;
+using Microsoft.Xrm.Sdk.Metadata;
+
+RetrieveEntityRequest request = new RetrieveEntityRequest
+{
+    LogicalName = "account",
+    EntityFilters = EntityFilters.Entity
+};
+
+RetrieveEntityResponse response =
+    (RetrieveEntityResponse)service.Execute(request);
+
+EntityMetadata metadata = response.EntityMetadata;
+
+Console.WriteLine(metadata.DisplayName.UserLocalizedLabel.Label);
+Console.WriteLine(metadata.PrimaryNameAttribute);
+Console.WriteLine(metadata.PrimaryIdAttribute);
+```
+
+Output
+
+```
+Account
+
+name
+
+accountid
+```
+
+---
+
+# Example 2: Retrieve All Attributes
+
+```csharp
+RetrieveEntityRequest request =
+    new RetrieveEntityRequest
+{
+    LogicalName = "account",
+    EntityFilters = EntityFilters.Attributes
+};
+
+RetrieveEntityResponse response =
+    (RetrieveEntityResponse)service.Execute(request);
+
+foreach(AttributeMetadata attribute
+    in response.EntityMetadata.Attributes)
+{
+    Console.WriteLine(attribute.LogicalName);
+}
+```
+
+Output
+
+```
+name
+
+telephone1
+
+emailaddress1
+
+websiteurl
+```
+
+---
+
+# Example 3: Retrieve One Attribute
+
+```csharp
+RetrieveAttributeRequest request =
+    new RetrieveAttributeRequest
+{
+    EntityLogicalName = "account",
+    LogicalName = "telephone1"
+};
+
+RetrieveAttributeResponse response =
+    (RetrieveAttributeResponse)service.Execute(request);
+
+AttributeMetadata attribute =
+    response.AttributeMetadata;
+
+Console.WriteLine(attribute.DisplayName.UserLocalizedLabel.Label);
+```
+
+Output
+
+```
+Main Phone
+```
+
+---
+
+# Example 4: Retrieve Choice (Option Set) Metadata
+
+Suppose
+
+```
+Status
+
+1 = Active
+
+2 = Inactive
+```
+
+```csharp
+RetrieveAttributeRequest request =
+    new RetrieveAttributeRequest
+{
+    EntityLogicalName = "account",
+    LogicalName = "statuscode"
+};
+
+RetrieveAttributeResponse response =
+    (RetrieveAttributeResponse)service.Execute(request);
+
+StatusAttributeMetadata status =
+    (StatusAttributeMetadata)response.AttributeMetadata;
+
+foreach(var option in status.OptionSet.Options)
+{
+    Console.WriteLine(
+        $"{option.Value} - {option.Label.UserLocalizedLabel.Label}");
+}
+```
+
+Output
+
+```
+1 - Active
+
+2 - Inactive
+```
+
+---
+
+# Example 5: Retrieve Relationships
+
+```csharp
+RetrieveEntityRequest request =
+    new RetrieveEntityRequest
+{
+    LogicalName = "account",
+    EntityFilters = EntityFilters.Relationships
+};
+
+RetrieveEntityResponse response =
+    (RetrieveEntityResponse)service.Execute(request);
+
+foreach(var relationship
+    in response.EntityMetadata.ManyToOneRelationships)
+{
+    Console.WriteLine(relationship.SchemaName);
+}
+```
+
+Output
+
+```
+account_primary_contact
+
+account_parent_account
+```
+
+---
+
+# Example 6: Global Choice (Global Option Set)
+
+```csharp
+RetrieveOptionSetRequest request =
+    new RetrieveOptionSetRequest
+{
+    Name = "new_Country"
+};
+
+RetrieveOptionSetResponse response =
+    (RetrieveOptionSetResponse)service.Execute(request);
+
+OptionSetMetadata optionSet =
+    (OptionSetMetadata)response.OptionSetMetadata;
+```
+
+---
+
+# Real Project Example
+
+Suppose you're building a generic audit plugin.
+
+Instead of hardcoding labels,
+
+```
+statuscode = 1
+```
+
+Retrieve metadata.
+
+```
+1
+
+↓
+
+Active
+```
+
+Now the audit log stores
+
+```
+Status changed to Active
+```
+
+instead of
+
+```
+Status changed to 1
+```
+
+---
+
+# Performance Considerations
+
+Metadata changes very rarely.
+
+❌ Don't query metadata on every plugin execution.
+
+Instead:
+
+* Cache metadata in memory (for long-running external applications).
+* Cache in Azure Cache/Redis (for external services).
+* Retrieve only the metadata you need.
+
+> **Note:** In sandbox plugins, in-memory caching is limited because plugin instances can be recycled. Avoid expensive metadata lookups on every execution if possible.
+
+---
+
+# Common Metadata Requests
+
+| Request                          | Purpose                                                  |
+| -------------------------------- | -------------------------------------------------------- |
+| `RetrieveEntityRequest`          | Entity metadata                                          |
+| `RetrieveAttributeRequest`       | Single attribute metadata                                |
+| `RetrieveOptionSetRequest`       | Global choice metadata                                   |
+| `RetrieveMetadataChangesRequest` | Incremental metadata changes                             |
+| `RetrieveAllEntitiesRequest`     | All entity metadata (rarely used in plugins due to cost) |
+
+---
+
+# Interview Answer (2 Minutes)
+
+> Metadata in a plugin is queried using the Dataverse Metadata API through `IOrganizationService.Execute()`. For example, I use `RetrieveEntityRequest` to retrieve entity definitions, `RetrieveAttributeRequest` for attribute details, `RetrieveOptionSetRequest` for global choice metadata, and `RetrieveMetadataChangesRequest` when tracking metadata updates. This allows me to access information such as display names, logical names, option set labels, relationships, and primary attributes. Since metadata changes infrequently, I avoid querying it on every plugin execution and instead retrieve only the required metadata or cache it where appropriate.
