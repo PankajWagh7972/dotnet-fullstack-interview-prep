@@ -744,3 +744,270 @@ Save Record
 # Interview Answer (2 Minutes)
 
 > **Pre-Validation** plugins execute first, before the main database transaction starts. They are ideal for validating requests, enforcing business rules, preventing duplicate records, or cancelling operations early, which avoids unnecessary transaction overhead. **Pre-Operation** plugins execute inside the database transaction, just before Dataverse performs the core operation. They are best suited for modifying the `Target` entity, calculating values, setting default fields, or making related updates that should be committed atomically with the main operation. In general, I use **Pre-Validation** for validation and **Pre-Operation** for data modification.
+---
+This is a common interview question for **Dynamics 365 CE Plugins**.
+
+## Short Answer
+
+> To access the current user's roles in a plugin, retrieve the current user's `systemuserid` from `IPluginExecutionContext.UserId`, then query the **systemuserroles** intersect table and join it with the **role** table using `QueryExpression` (or FetchXML). This returns all security roles assigned to the user.
+
+---
+
+# Dataverse Relationship
+
+```text
+SystemUser
+     │
+     │ N:N
+     │
+SystemUserRoles (Intersect Table)
+     │
+     │
+Role
+```
+
+A user can have multiple roles.
+
+Example:
+
+```text
+Pankaj
+
+↓
+
+Salesperson
+
+System Administrator
+
+Custom Manager
+```
+
+---
+
+# Step 1: Get Current User
+
+```csharp
+Guid userId = context.UserId;
+```
+
+or
+
+```csharp
+Guid initiatingUser = context.InitiatingUserId;
+```
+
+### Difference
+
+| Property           | Meaning                                                                          |
+| ------------------ | -------------------------------------------------------------------------------- |
+| `UserId`           | User under whose security context the plugin is executing (may be impersonated). |
+| `InitiatingUserId` | The original user who initiated the request.                                     |
+
+Most of the time you'll use:
+
+```csharp
+context.UserId;
+```
+
+---
+
+# Step 2: Query User Roles
+
+```csharp
+QueryExpression query = new QueryExpression("role");
+
+query.ColumnSet = new ColumnSet("name");
+
+LinkEntity userRoleLink = query.AddLink(
+    "systemuserroles",
+    "roleid",
+    "roleid");
+
+userRoleLink.LinkCriteria.AddCondition(
+    "systemuserid",
+    ConditionOperator.Equal,
+    context.UserId);
+
+EntityCollection roles = service.RetrieveMultiple(query);
+```
+
+---
+
+# Step 3: Read Role Names
+
+```csharp
+foreach (Entity role in roles.Entities)
+{
+    string roleName =
+        role.GetAttributeValue<string>("name");
+
+    tracing.Trace(roleName);
+}
+```
+
+Output
+
+```text
+Salesperson
+
+Sales Manager
+
+CSR Manager
+```
+
+---
+
+# Complete Plugin Example
+
+```csharp
+using Microsoft.Xrm.Sdk;
+using Microsoft.Xrm.Sdk.Query;
+
+public class CheckUserRolePlugin : IPlugin
+{
+    public void Execute(IServiceProvider serviceProvider)
+    {
+        var context = (IPluginExecutionContext)
+            serviceProvider.GetService(typeof(IPluginExecutionContext));
+
+        var factory = (IOrganizationServiceFactory)
+            serviceProvider.GetService(typeof(IOrganizationServiceFactory));
+
+        var service =
+            factory.CreateOrganizationService(context.UserId);
+
+        var tracing =
+            (ITracingService)
+            serviceProvider.GetService(typeof(ITracingService));
+
+        QueryExpression query = new QueryExpression("role");
+
+        query.ColumnSet = new ColumnSet("name");
+
+        LinkEntity link = query.AddLink(
+            "systemuserroles",
+            "roleid",
+            "roleid");
+
+        link.LinkCriteria.AddCondition(
+            "systemuserid",
+            ConditionOperator.Equal,
+            context.UserId);
+
+        EntityCollection roles =
+            service.RetrieveMultiple(query);
+
+        foreach (Entity role in roles.Entities)
+        {
+            tracing.Trace(
+                $"Role : {role.GetAttributeValue<string>("name")}");
+        }
+    }
+}
+```
+
+---
+
+# Check if User Has a Specific Role
+
+```csharp
+bool isAdmin = roles.Entities.Any(r =>
+    r.GetAttributeValue<string>("name") ==
+    "System Administrator");
+
+if (!isAdmin)
+{
+    throw new InvalidPluginExecutionException(
+        "Only System Administrators can perform this action.");
+}
+```
+
+---
+
+# Alternative Using FetchXML
+
+```xml
+<fetch>
+  <entity name="role">
+    <attribute name="name"/>
+    <link-entity name="systemuserroles"
+                 from="roleid"
+                 to="roleid">
+      <filter>
+        <condition attribute="systemuserid"
+                   operator="eq"
+                   value="{USERID}" />
+      </filter>
+    </link-entity>
+  </entity>
+</fetch>
+```
+
+```csharp
+EntityCollection roles =
+    service.RetrieveMultiple(
+        new FetchExpression(fetchXml));
+```
+
+---
+
+# Real Project Example
+
+### Requirement
+
+Only users with the **Sales Manager** role can approve discounts greater than **20%**.
+
+```text
+Update Opportunity
+
+↓
+
+Plugin
+
+↓
+
+Get Current User Roles
+
+↓
+
+Sales Manager?
+
+↓
+
+Yes
+
+↓
+
+Approve
+
+↓
+
+No
+
+↓
+
+Throw Exception
+```
+
+```csharp
+bool isSalesManager = roles.Entities.Any(r =>
+    r.GetAttributeValue<string>("name") == "Sales Manager");
+
+if (!isSalesManager && discount > 20)
+{
+    throw new InvalidPluginExecutionException(
+        "Only Sales Managers can approve discounts above 20%.");
+}
+```
+
+---
+
+# Best Practice
+
+If you're checking **privileges** rather than just role names, it's generally better to rely on **Dataverse security roles and privileges** or built-in access checks instead of hardcoding role names. Role names can vary between environments or be renamed, whereas privileges remain consistent.
+
+---
+
+# Interview Answer (2 Minutes)
+
+> In a plugin, I obtain the current user's ID from `IPluginExecutionContext.UserId` (or `InitiatingUserId` if I need the original caller). I then query the `role` table and join it with the `systemuserroles` intersect table using `QueryExpression` or `FetchXML` to retrieve all roles assigned to that user. I can iterate through the returned roles or check for a specific role before allowing a business operation. For authorization decisions, I prefer relying on Dataverse security privileges where possible instead of hardcoding role names, since role names can differ across environments.
