@@ -3373,3 +3373,453 @@ All of these are child or related records created from a single plugin execution
 
 > Yes, plugins can create, update, delete, or associate child records using `IOrganizationService`. A common example is creating a Contact when an Account is created or updating related Contacts when an Account changes. In a synchronous plugin, these operations participate in the same Dataverse transaction, so if any operation fails, the entire transaction is rolled back. While implementing this, I ensure I prevent recursive execution using `context.Depth`, retrieve only the required columns, and avoid large-scale child record processing inside synchronous plugins. For heavy workloads, I prefer asynchronous processing or Azure-based integration services.
 
+This is a **very important Dynamics 365 interview question** for experienced developers.
+
+The interviewer wants to know how Dataverse transactions work and what best practices you follow.
+
+---
+
+# Short Answer
+
+> The recommended approach is to **let Dataverse manage the transaction**. Synchronous **Pre-Operation** and **Post-Operation** plugins automatically participate in the same database transaction. If an exception is thrown, Dataverse rolls back the entire transaction. Developers should **not** manually manage SQL transactions or use `TransactionScope` inside plugins.
+
+---
+
+# Transaction Flow
+
+```text
+User Creates Account
+        │
+        ▼
+Pre-Operation Plugin
+        │
+        ▼
+Core Dataverse Operation
+        │
+        ▼
+Post-Operation Plugin
+        │
+        ▼
+Commit Transaction
+```
+
+If any step fails:
+
+```text
+User Creates Account
+        │
+        ▼
+Pre-Operation Plugin
+        │
+        ▼
+Create Contact
+        │
+        ▼
+❌ Exception
+        │
+        ▼
+Rollback
+        │
+        ▼
+Account NOT Created
+Contact NOT Created
+```
+
+Everything is rolled back.
+
+---
+
+# Example
+
+Suppose your plugin creates:
+
+* Account
+* Contact
+* Task
+
+```text
+Account
+
+↓
+
+Plugin
+
+↓
+
+Create Contact
+
+↓
+
+Create Task
+
+↓
+
+Commit
+```
+
+Code
+
+```csharp
+Entity contact = new Entity("contact");
+service.Create(contact);
+
+Entity task = new Entity("task");
+service.Create(task);
+```
+
+If
+
+```csharp
+throw new InvalidPluginExecutionException("Error");
+```
+
+Then
+
+```text
+Account ❌
+
+Contact ❌
+
+Task ❌
+```
+
+Nothing is saved.
+
+---
+
+# Don't Use TransactionScope
+
+❌ Avoid this:
+
+```csharp
+using (TransactionScope scope = new TransactionScope())
+{
+    service.Create(entity);
+
+    scope.Complete();
+}
+```
+
+Why?
+
+* Dataverse already manages the transaction.
+* Nested or distributed transactions are **not supported** in plugins.
+* It can lead to runtime errors or unexpected behavior.
+
+---
+
+# Synchronous vs Asynchronous
+
+## Synchronous Plugin
+
+```text
+User
+
+↓
+
+Plugin
+
+↓
+
+Dataverse Transaction
+
+↓
+
+Commit
+```
+
+* Runs inside the Dataverse transaction.
+* Exception = rollback.
+* User waits for completion.
+
+---
+
+## Asynchronous Plugin
+
+```text
+User
+
+↓
+
+Record Saved
+
+↓
+
+Transaction Completed
+
+↓
+
+Async Plugin
+
+↓
+
+Background Processing
+```
+
+* Runs **after** the main transaction has committed.
+* Cannot roll back the original Create/Update/Delete.
+* Best for notifications, integrations, emails, etc.
+
+---
+
+# When to Use Synchronous
+
+Use when you need:
+
+* Validation
+* Business rules
+* Calculations
+* Default values
+* Related record creation that must succeed with the parent
+* Atomic operations
+
+Example:
+
+```text
+Create Order
+
+↓
+
+Create Order Items
+
+↓
+
+Commit Together
+```
+
+---
+
+# When to Use Asynchronous
+
+Use when you need:
+
+* Send email
+* Call REST API
+* Azure Service Bus
+* Power Automate
+* Long-running operations
+* Integrations
+
+Example:
+
+```text
+Opportunity Won
+
+↓
+
+Save Opportunity
+
+↓
+
+Async Plugin
+
+↓
+
+Send SAP
+
+↓
+
+Send Email
+
+↓
+
+Generate PDF
+```
+
+---
+
+# Real Project Example
+
+### Requirement
+
+When an Order is created:
+
+* Create Invoice
+* Create Invoice Lines
+* Update Inventory
+
+```text
+Order
+
+↓
+
+Plugin
+
+↓
+
+Invoice
+
+↓
+
+Invoice Line
+
+↓
+
+Inventory
+
+↓
+
+Commit
+```
+
+If inventory update fails:
+
+```text
+Order ❌
+
+Invoice ❌
+
+Invoice Line ❌
+
+Inventory ❌
+```
+
+Everything is rolled back automatically.
+
+---
+
+# Best Practices
+
+### ✅ Let Dataverse manage the transaction
+
+Don't implement your own transaction logic.
+
+---
+
+### ✅ Keep synchronous plugins fast
+
+Avoid:
+
+* Thousands of updates
+* Long loops
+* Slow HTTP calls
+* Large file processing
+
+---
+
+### ✅ Throw exceptions for business validation
+
+```csharp
+if (creditLimit < amount)
+{
+    throw new InvalidPluginExecutionException(
+        "Credit limit exceeded.");
+}
+```
+
+Dataverse rolls back automatically.
+
+---
+
+### ✅ Use asynchronous plugins for external systems
+
+Instead of:
+
+```text
+Plugin
+
+↓
+
+SAP
+
+↓
+
+Oracle
+
+↓
+
+Blob
+
+↓
+
+Email
+```
+
+Use:
+
+```text
+Plugin
+
+↓
+
+Azure Service Bus
+
+↓
+
+Azure Function
+
+↓
+
+SAP
+```
+
+This improves performance and reliability.
+
+---
+
+### ✅ Avoid recursion
+
+```csharp
+if (context.Depth > 1)
+{
+    return;
+}
+```
+
+---
+
+### ✅ Minimize database operations
+
+Retrieve only the columns you need:
+
+```csharp
+ColumnSet columns = new ColumnSet("name", "telephone1");
+```
+
+instead of:
+
+```csharp
+new ColumnSet(true);
+```
+
+---
+
+# Common Interview Follow-Up
+
+### Q: Can I roll back an asynchronous plugin?
+
+**Answer:**
+
+No.
+
+The main transaction has already been committed.
+
+Only synchronous plugins participate in the Dataverse transaction.
+
+---
+
+### Q: Can I commit half the records?
+
+**Answer:**
+
+No.
+
+A synchronous plugin participates in a single transaction.
+
+Either:
+
+```text
+Everything Commits
+```
+
+or
+
+```text
+Everything Rolls Back
+```
+
+---
+
+# Interview Answer (2 Minutes)
+
+> The recommended approach is to rely on Dataverse's built-in transaction management. Synchronous Pre-Operation and Post-Operation plugins automatically execute within the same transaction as the core operation. If the plugin throws an `InvalidPluginExecutionException` or another unhandled exception, Dataverse rolls back all changes made during that transaction. I avoid using `TransactionScope` or manual transaction management because Dataverse already handles transaction boundaries. I also keep synchronous plugins lightweight and move long-running tasks such as external integrations, email notifications, or document generation to asynchronous plugins, Azure Functions, or Service Bus to avoid blocking users and reduce the risk of timeouts.
