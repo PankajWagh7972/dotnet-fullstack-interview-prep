@@ -2551,3 +2551,825 @@ Normally **no**. A plugin runs under its configured execution context (calling u
 # Interview Answer (2 Minutes)
 
 > Security in Dynamics 365 plugins is primarily enforced by Dataverse. Plugins usually execute under the calling user's security context, so all CRUD operations respect that user's roles and privileges. If business requirements require elevated permissions, I use impersonation or configure the plugin step to run as a dedicated service account, following the principle of least privilege. For business authorization, I may validate security roles, team membership, record ownership, or business unit membership before allowing an operation. I also avoid hardcoding secrets by using Environment Variables, Secure Plugin Configuration, or Azure Key Vault, and I audit sensitive operations to provide traceability. This approach keeps plugins secure while aligning with Dataverse's built-in security model.
+
+
+This is one of the **most commonly asked Dynamics 365 plugin interview questions**.
+
+## Short Answer
+
+> In an **Update** plugin, the **previous (old) value** is obtained from the **Pre Entity Image**, while the **new value** comes from the **Target** entity (in Pre-Operation) or the **Post Entity Image** (in Post-Operation). Since the `Target` only contains changed attributes, it's a best practice to compare the `Target` with the `Pre Image`.
+
+---
+
+# Execution Flow
+
+```text
+User Updates Account
+
+Old Name : ABC Ltd
+
+        │
+
+        ▼
+
+Pre Image
+Name = ABC Ltd
+
+        │
+
+        ▼
+
+Target
+Name = ABC Technologies
+
+        │
+
+        ▼
+
+Database Update
+
+        │
+
+        ▼
+
+Post Image
+Name = ABC Technologies
+```
+
+---
+
+# Step 1: Register Images
+
+In the **Plugin Registration Tool**, register:
+
+### Pre Image
+
+```text
+Alias:
+PreImage
+
+Attributes:
+name
+telephone1
+emailaddress1
+creditlimit
+```
+
+### Post Image
+
+```text
+Alias:
+PostImage
+```
+
+---
+
+# Step 2: Access Previous Value (Pre Image)
+
+```csharp
+Entity preImage = context.PreEntityImages["PreImage"];
+
+string oldName = preImage.GetAttributeValue<string>("name");
+
+tracing.Trace($"Old Name: {oldName}");
+```
+
+Output:
+
+```text
+Old Name: ABC Ltd
+```
+
+---
+
+# Step 3: Access New Value (Target)
+
+```csharp
+Entity target = (Entity)context.InputParameters["Target"];
+
+if (target.Contains("name"))
+{
+    string newName = target.GetAttributeValue<string>("name");
+
+    tracing.Trace($"New Name: {newName}");
+}
+```
+
+Output:
+
+```text
+New Name: ABC Technologies
+```
+
+---
+
+# Complete Plugin Example
+
+```csharp
+using Microsoft.Xrm.Sdk;
+
+public class CompareFieldPlugin : IPlugin
+{
+    public void Execute(IServiceProvider serviceProvider)
+    {
+        var context = (IPluginExecutionContext)
+            serviceProvider.GetService(typeof(IPluginExecutionContext));
+
+        var tracing = (ITracingService)
+            serviceProvider.GetService(typeof(ITracingService));
+
+        if (!(context.InputParameters.Contains("Target") &&
+              context.InputParameters["Target"] is Entity target))
+        {
+            return;
+        }
+
+        if (!context.PreEntityImages.Contains("PreImage"))
+            return;
+
+        Entity preImage = context.PreEntityImages["PreImage"];
+
+        string oldName = preImage.GetAttributeValue<string>("name");
+
+        string newName = target.Contains("name")
+            ? target.GetAttributeValue<string>("name")
+            : oldName;
+
+        if (oldName != newName)
+        {
+            tracing.Trace($"Name changed from '{oldName}' to '{newName}'");
+        }
+    }
+}
+```
+
+---
+
+# Access Final Value (Post Image)
+
+If you need the value **after Dataverse has saved the record**, use the Post Image.
+
+```csharp
+Entity postImage = context.PostEntityImages["PostImage"];
+
+string updatedName =
+    postImage.GetAttributeValue<string>("name");
+```
+
+---
+
+# Real-World Example 1: Credit Limit Change
+
+Customer credit limit changes.
+
+```text
+Before
+
+Credit Limit = 10000
+
+↓
+
+User Updates
+
+↓
+
+Credit Limit = 15000
+
+↓
+
+Plugin
+
+↓
+
+Notify Finance
+```
+
+```csharp
+Money oldLimit =
+    preImage.GetAttributeValue<Money>("creditlimit");
+
+Money newLimit = target.Contains("creditlimit")
+    ? target.GetAttributeValue<Money>("creditlimit")
+    : oldLimit;
+
+if (oldLimit.Value != newLimit.Value)
+{
+    tracing.Trace(
+        $"Credit Limit changed from {oldLimit.Value} to {newLimit.Value}");
+
+    // Send Email
+    // Create Audit Record
+}
+```
+
+---
+
+# Real-World Example 2: Status Change
+
+```text
+Status
+
+Active
+
+↓
+
+Inactive
+
+↓
+
+Plugin
+
+↓
+
+Create Audit Log
+```
+
+```csharp
+OptionSetValue oldStatus =
+    preImage.GetAttributeValue<OptionSetValue>("statuscode");
+
+OptionSetValue newStatus = target.Contains("statuscode")
+    ? target.GetAttributeValue<OptionSetValue>("statuscode")
+    : oldStatus;
+
+if (oldStatus.Value != newStatus.Value)
+{
+    tracing.Trace("Status Changed");
+}
+```
+
+---
+
+# Target vs Pre Image vs Post Image
+
+| Source         | Contains             | Use Case               |
+| -------------- | -------------------- | ---------------------- |
+| **Target**     | Only changed fields  | New values before save |
+| **Pre Image**  | Record before update | Previous values        |
+| **Post Image** | Record after update  | Final persisted values |
+
+---
+
+# Best Practices
+
+* ✅ Register **only the required attributes** in Pre/Post Images.
+* ✅ Always check `target.Contains("fieldname")` before accessing a field.
+* ✅ Use **Pre Images** instead of `service.Retrieve()` to avoid extra database calls.
+* ✅ Use **Post Images** when you need the final saved values after all processing.
+* ✅ Compare old and new values before executing business logic to avoid unnecessary processing.
+
+---
+This is an important interview question because many developers misunderstand **Pre Images**.
+
+## Short Answer
+
+> A **Pre Image** contains the **values of the record before the operation starts**, but **only for the attributes you selected during plugin registration**. It does **not** automatically contain all columns.
+
+---
+
+# Example
+
+Suppose the Account record in Dataverse is:
+
+| Field        | Value                                     |
+| ------------ | ----------------------------------------- |
+| Name         | ABC Ltd                                   |
+| Telephone    | 9876543210                                |
+| Email        | [abc@company.com](mailto:abc@company.com) |
+| Credit Limit | 10000                                     |
+| Address      | Pune                                      |
+
+The user changes:
+
+```text
+Name = ABC Technologies
+```
+
+---
+
+## Plugin Registration
+
+You configure the Pre Image as:
+
+```text
+Alias : PreImage
+
+Attributes:
+name
+telephone1
+creditlimit
+```
+
+---
+
+## Pre Image Contains
+
+```csharp
+Entity preImage = context.PreEntityImages["PreImage"];
+```
+
+Available values:
+
+```text
+name         = ABC Ltd
+telephone1   = 9876543210
+creditlimit  = 10000
+```
+
+It **does not contain**:
+
+```text
+emailaddress1
+address1_city
+```
+
+because they were **not registered** in the image.
+
+---
+
+# Target Contains
+
+The `Target` entity contains **only changed attributes**.
+
+```text
+Target
+
+name = ABC Technologies
+```
+
+It does **not** contain:
+
+```text
+telephone1
+creditlimit
+```
+
+unless those fields were also changed.
+
+---
+
+# Post Image
+
+After the update:
+
+```text
+Post Image
+
+name         = ABC Technologies
+telephone1   = 9876543210
+creditlimit  = 10000
+```
+
+Again, **only the attributes configured in the Post Image** are available.
+
+---
+
+# Example Code
+
+```csharp
+Entity preImage = context.PreEntityImages["PreImage"];
+
+string oldName =
+    preImage.GetAttributeValue<string>("name");
+
+string oldPhone =
+    preImage.GetAttributeValue<string>("telephone1");
+
+Money oldCredit =
+    preImage.GetAttributeValue<Money>("creditlimit");
+```
+
+---
+
+# If You Didn't Register a Field
+
+Suppose you try:
+
+```csharp
+string email =
+    preImage.GetAttributeValue<string>("emailaddress1");
+```
+
+It returns:
+
+* `null` (if using `GetAttributeValue<T>()` and the attribute is missing), or
+* `false` from `preImage.Contains("emailaddress1")`.
+
+That's why you should always check:
+
+```csharp
+if (preImage.Contains("emailaddress1"))
+{
+    string email =
+        preImage.GetAttributeValue<string>("emailaddress1");
+}
+```
+
+---
+
+# Can We Register All Attributes?
+
+Yes.
+
+Plugin Registration Tool:
+
+```text
+Pre Image
+
+Attributes
+
+All Attributes
+```
+
+or
+
+```text
+*
+```
+
+depending on the tool.
+
+But this is **not recommended**.
+
+### Why?
+
+Because it:
+
+* Increases memory usage
+* Makes the execution context larger
+* Slightly impacts performance
+
+It's better to register only the attributes your plugin actually needs.
+
+---
+
+# Best Practice
+
+Suppose your plugin compares:
+
+* Name
+* Credit Limit
+* Status
+
+Register only:
+
+```text
+name
+creditlimit
+statuscode
+```
+
+instead of:
+
+```text
+All Attributes
+```
+
+---
+
+# Interview Answer
+
+> A **Pre Image** contains the values of the record **before** the operation executes, but **only for the attributes configured in the plugin registration**. It does not automatically include every field from the entity. If I need old values for `name`, `creditlimit`, and `statuscode`, I register only those attributes in the Pre Image. This improves performance and avoids unnecessary data being loaded into the plugin execution context.
+
+# Interview Answer (2 Minutes)
+
+> In an Update plugin, I use the **Pre Entity Image** to get the previous value of a field and the **Target** entity to get the new value being submitted. Since the Target only contains modified attributes, I always check `target.Contains("fieldname")` before reading it. If I need the final value after the update has been committed, I use the **Post Entity Image**. Using entity images is more efficient than calling `Retrieve()` because it avoids additional database queries and improves plugin performance.
+
+Yes. **Plugins can create, update, delete, or associate child records** using `IOrganizationService`. This is one of the most common use cases for Dynamics 365 plugins.
+
+---
+
+# Short Answer
+
+> Yes. A plugin can create, update, delete, or associate related (child) records by using `IOrganizationService.Create()`, `Update()`, `Delete()`, or `Associate()`. If the plugin is synchronous, these operations participate in the same Dataverse transaction, so if the plugin fails, all changes are rolled back.
+
+---
+
+# Example 1: Create Child Record
+
+### Scenario
+
+When an **Account** is created, automatically create a **Contact**.
+
+```
+Account
+   │
+   └── Contact
+```
+
+### Plugin
+
+```csharp
+public class AccountCreatePlugin : IPlugin
+{
+    public void Execute(IServiceProvider serviceProvider)
+    {
+        var context = (IPluginExecutionContext)
+            serviceProvider.GetService(typeof(IPluginExecutionContext));
+
+        var factory = (IOrganizationServiceFactory)
+            serviceProvider.GetService(typeof(IOrganizationServiceFactory));
+
+        var service = factory.CreateOrganizationService(context.UserId);
+
+        Entity account = (Entity)context.InputParameters["Target"];
+
+        // Create child contact
+        Entity contact = new Entity("contact");
+
+        contact["firstname"] = "John";
+        contact["lastname"] = "Doe";
+
+        // Associate with Account
+        contact["parentcustomerid"] = account.ToEntityReference();
+
+        service.Create(contact);
+    }
+}
+```
+
+---
+
+# Example 2: Update Child Records
+
+### Scenario
+
+If an Account's phone number changes, update all related Contacts.
+
+```
+Account
+
+Phone Changed
+
+      │
+
+      ▼
+
+Update All Contacts
+```
+
+```csharp
+QueryExpression query = new QueryExpression("contact");
+
+query.ColumnSet = new ColumnSet("telephone1");
+
+query.Criteria.AddCondition(
+    "parentcustomerid",
+    ConditionOperator.Equal,
+    accountId);
+
+EntityCollection contacts =
+    service.RetrieveMultiple(query);
+
+foreach (Entity contact in contacts.Entities)
+{
+    contact["telephone1"] = newPhone;
+
+    service.Update(contact);
+}
+```
+
+---
+
+# Example 3: Delete Child Records
+
+```csharp
+foreach (Entity contact in contacts.Entities)
+{
+    service.Delete("contact", contact.Id);
+}
+```
+
+---
+
+# Example 4: Create Multiple Child Records
+
+Suppose:
+
+```
+Opportunity Won
+
+↓
+
+Create
+
+Invoice
+
+Invoice Lines
+
+Tasks
+
+Activities
+```
+
+```csharp
+Entity invoice = new Entity("invoice");
+Guid invoiceId = service.Create(invoice);
+
+for(int i=1;i<=5;i++)
+{
+    Entity line = new Entity("invoicedetail");
+
+    line["invoiceid"] =
+        new EntityReference("invoice", invoiceId);
+
+    line["quantity"] = i;
+
+    service.Create(line);
+}
+```
+
+---
+
+# Transaction Behavior
+
+For a **synchronous** plugin:
+
+```
+Create Account
+
+↓
+
+Plugin
+
+↓
+
+Create Contact
+
+↓
+
+Create Task
+
+↓
+
+Update Opportunity
+
+↓
+
+Success
+```
+
+All operations succeed together.
+
+If one fails:
+
+```
+Create Account
+
+↓
+
+Plugin
+
+↓
+
+Create Contact
+
+↓
+
+❌ Exception
+
+↓
+
+Rollback
+
+↓
+
+Account Not Created
+
+↓
+
+Contact Not Created
+```
+
+Everything is rolled back.
+
+---
+
+# Avoid Infinite Loops
+
+Suppose:
+
+```
+Account Plugin
+
+↓
+
+Updates Contact
+
+↓
+
+Contact Plugin
+
+↓
+
+Updates Account
+
+↓
+
+Account Plugin
+
+↓
+
+...
+```
+
+This creates an infinite loop.
+
+Prevent it:
+
+```csharp
+if (context.Depth > 1)
+{
+    return;
+}
+```
+
+---
+
+# Performance Considerations
+
+### Avoid
+
+```text
+For each Contact
+
+↓
+
+Retrieve()
+
+↓
+
+Update()
+```
+
+for thousands of records in a synchronous plugin.
+
+Instead:
+
+* Keep synchronous plugins lightweight.
+* Use **ExecuteMultipleRequest** (for external applications; note it's not recommended inside plugins due to transaction and performance considerations).
+* Offload heavy processing to **Azure Service Bus**, **Azure Functions**, or **Power Automate**.
+
+---
+
+# Real Project Example
+
+### Requirement
+
+When an Opportunity is Won:
+
+```
+Opportunity
+
+↓
+
+Plugin
+
+↓
+
+Create Invoice
+
+↓
+
+Create Invoice Lines
+
+↓
+
+Create Follow-up Task
+
+↓
+
+Send Email
+```
+
+Implementation:
+
+```csharp
+// Create Invoice
+Guid invoiceId = service.Create(invoice);
+
+// Create Invoice Line
+service.Create(invoiceLine);
+
+// Create Task
+service.Create(task);
+```
+
+All of these are child or related records created from a single plugin execution.
+
+---
+
+# Best Practices
+
+* ✅ Use `EntityReference` to link child records to the parent.
+* ✅ Handle exceptions so the transaction behaves predictably.
+* ✅ Prevent recursion using `context.Depth`.
+* ✅ Avoid processing thousands of child records synchronously.
+* ✅ Retrieve only the columns you need with `ColumnSet`.
+
+---
+
+# Interview Answer (2 Minutes)
+
+> Yes, plugins can create, update, delete, or associate child records using `IOrganizationService`. A common example is creating a Contact when an Account is created or updating related Contacts when an Account changes. In a synchronous plugin, these operations participate in the same Dataverse transaction, so if any operation fails, the entire transaction is rolled back. While implementing this, I ensure I prevent recursive execution using `context.Depth`, retrieve only the required columns, and avoid large-scale child record processing inside synchronous plugins. For heavy workloads, I prefer asynchronous processing or Azure-based integration services.
+
