@@ -1104,3 +1104,253 @@ Sharing
 # Interview Answer (3–5 Minutes)
 
 > The Dynamics 365 security model is based on **Business Units, Security Roles, Privileges, Access Levels, Record Ownership, Teams, Sharing, and Field-Level Security**. Every user belongs to a Business Unit and is assigned one or more Security Roles. A Security Role contains privileges such as Create, Read, Write, Delete, Append, Assign, and Share, each with an access level like User, Business Unit, Parent-Child Business Unit, or Organization. Records are typically secured through ownership, but access can also be granted using Owner Teams, Access Teams, or record sharing. For protecting sensitive data within a record, Dynamics provides **Field-Level Security**, where Field Security Profiles control who can read, update, or create values for specific fields. Plugins respect these security settings by default and execute under the configured user context, unless impersonation is explicitly used. This layered model provides secure, scalable, and flexible access control across the organization.
+
+
+In **Dynamics 365 CRM / Dataverse Plug-in development**, you'll commonly use the following NuGet packages and namespaces.
+
+## Essential NuGet Packages
+
+### 1. Microsoft.CrmSdk.CoreAssemblies ⭐ (Most Important)
+
+Contains the core SDK assemblies required for plug-in development.
+
+**NuGet Package:**
+
+```
+Microsoft.CrmSdk.CoreAssemblies
+```
+
+Provides assemblies such as:
+
+* Microsoft.Xrm.Sdk
+* Microsoft.Crm.Sdk.Proxy
+* Microsoft.Xrm.Sdk.Workflow
+
+Used for:
+
+* `IPlugin`
+* `IPluginExecutionContext`
+* `Entity`
+* `EntityReference`
+* `QueryExpression`
+* `ColumnSet`
+* `ConditionExpression`
+* `OrganizationRequest`
+* `OrganizationResponse`
+
+---
+
+### 2. Microsoft.PowerPlatform.Dataverse.Client
+
+Used when connecting to Dataverse from external applications.
+
+**NuGet Package**
+
+```
+Microsoft.PowerPlatform.Dataverse.Client
+```
+
+Contains:
+
+```
+ServiceClient
+```
+
+**Note:** This package is **NOT required inside plug-ins** because Microsoft provides the `IOrganizationService`.
+
+---
+
+### 3. Newtonsoft.Json
+
+Useful when working with JSON payloads.
+
+```
+Newtonsoft.Json
+```
+
+Example:
+
+```csharp
+string json = JsonConvert.SerializeObject(entity);
+
+var obj = JsonConvert.DeserializeObject<MyClass>(json);
+```
+
+---
+
+### 4. Microsoft.Extensions.DependencyInjection (Rare)
+
+Only if you're implementing dependency injection in advanced architectures.
+
+---
+
+### 5. Microsoft.Extensions.Logging (Rare)
+
+Mostly used in Azure Functions or external services rather than plug-ins.
+
+---
+
+## Common Namespaces
+
+```csharp
+using Microsoft.Xrm.Sdk;
+using Microsoft.Xrm.Sdk.Query;
+using Microsoft.Xrm.Sdk.Messages;
+using Microsoft.Crm.Sdk.Messages;
+using System;
+using System.Linq;
+using System.Collections.Generic;
+```
+
+---
+
+## Frequently Used SDK Classes
+
+### Context
+
+```csharp
+IPluginExecutionContext
+```
+
+---
+
+### Service Factory
+
+```csharp
+IOrganizationServiceFactory
+```
+
+---
+
+### Organization Service
+
+```csharp
+IOrganizationService
+```
+
+---
+
+### Tracing
+
+```csharp
+ITracingService
+```
+
+---
+
+### Entity
+
+```csharp
+Entity
+EntityReference
+EntityCollection
+Money
+OptionSetValue
+OptionSetValueCollection
+AliasedValue
+```
+
+---
+
+### Query
+
+```csharp
+QueryExpression
+ColumnSet
+FilterExpression
+ConditionExpression
+LinkEntity
+OrderExpression
+PagingInfo
+```
+
+---
+
+### Requests
+
+```csharp
+CreateRequest
+UpdateRequest
+DeleteRequest
+AssignRequest
+AssociateRequest
+DisassociateRequest
+RetrieveRequest
+RetrieveMultipleRequest
+ExecuteMultipleRequest
+ExecuteTransactionRequest
+WinOpportunityRequest
+LoseOpportunityRequest
+SetStateRequest
+```
+
+---
+
+### Metadata
+
+```csharp
+RetrieveEntityRequest
+RetrieveAttributeRequest
+RetrieveOptionSetRequest
+```
+
+---
+
+### Exceptions
+
+```csharp
+InvalidPluginExecutionException
+FaultException<OrganizationServiceFault>
+```
+
+---
+
+## Common .NET Packages
+
+```csharp
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+```
+
+---
+
+## Typical Plug-in Base Class Setup
+
+```csharp
+public class AccountPlugin : IPlugin
+{
+    public void Execute(IServiceProvider serviceProvider)
+    {
+        var tracingService =
+            (ITracingService)serviceProvider.GetService(typeof(ITracingService));
+
+        var context =
+            (IPluginExecutionContext)serviceProvider.GetService(typeof(IPluginExecutionContext));
+
+        var factory =
+            (IOrganizationServiceFactory)serviceProvider.GetService(typeof(IOrganizationServiceFactory));
+
+        var service = factory.CreateOrganizationService(context.UserId);
+
+        // Your business logic
+    }
+}
+```
+
+## For Interviews (5+ Years)
+
+You should also be familiar with:
+
+* Early Bound vs. Late Bound entities
+* `Microsoft.Xrm.Sdk.Query` for complex queries
+* `Microsoft.Xrm.Sdk.Messages` for SDK requests
+* `Microsoft.Crm.Sdk.Messages` for CRM-specific requests
+* `Microsoft.Xrm.Tooling` (legacy tooling)
+* `Microsoft.PowerPlatform.Dataverse.Client` (modern external connectivity)
+* Plug-in Registration Tool (PRT)
+* `pac` CLI (Power Platform CLI) for modern development and deployment
+
+For most Dynamics 365 plug-in projects today, the **only mandatory NuGet package is `Microsoft.CrmSdk.CoreAssemblies`**. Additional packages like `Microsoft.PowerPlatform.Dataverse.Client` or `Newtonsoft.Json` are included only when your plug-in or related solution specifically needs their functionality.
